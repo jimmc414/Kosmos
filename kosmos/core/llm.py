@@ -25,6 +25,73 @@ from kosmos.core.claude_cache import get_claude_cache, ClaudeCache
 logger = logging.getLogger(__name__)
 
 
+class ModelComplexity:
+    """Estimate prompt complexity for model selection."""
+
+    # Complexity keywords that suggest Sonnet should be used
+    COMPLEX_KEYWORDS = [
+        'analyze', 'synthesis', 'complex', 'design', 'architecture',
+        'research', 'hypothesis', 'experiment', 'optimize', 'algorithm',
+        'proof', 'theorem', 'mathematical', 'scientific', 'reasoning',
+        'creative', 'novel', 'innovative', 'strategy', 'plan'
+    ]
+
+    @staticmethod
+    def estimate_complexity(
+        prompt: str,
+        system: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Estimate prompt complexity.
+
+        Args:
+            prompt: The user prompt
+            system: Optional system prompt
+
+        Returns:
+            dict: Complexity analysis with score and recommendation
+        """
+        # Count tokens (rough estimate: ~4 chars per token)
+        prompt_tokens = len(prompt) / 4
+        system_tokens = len(system or "") / 4
+        total_tokens = prompt_tokens + system_tokens
+
+        # Check for complex keywords
+        prompt_lower = prompt.lower()
+        keyword_matches = sum(
+            1 for keyword in ModelComplexity.COMPLEX_KEYWORDS
+            if keyword in prompt_lower
+        )
+
+        # Scoring (0-100)
+        # - Token count contributes up to 50 points
+        # - Keyword matches contribute up to 50 points
+        token_score = min(total_tokens / 20, 50)  # Max at 1000 tokens
+        keyword_score = min(keyword_matches * 10, 50)  # Max at 5 keywords
+
+        complexity_score = token_score + keyword_score
+
+        # Recommendation
+        if complexity_score < 30:
+            recommendation = "haiku"  # Simple task
+        elif complexity_score < 60:
+            recommendation = "sonnet"  # Moderate complexity
+        else:
+            recommendation = "sonnet"  # High complexity
+
+        return {
+            'complexity_score': round(complexity_score, 2),
+            'total_tokens_estimate': int(total_tokens),
+            'keyword_matches': keyword_matches,
+            'recommendation': recommendation,
+            'reason': (
+                'simple query' if complexity_score < 30
+                else 'moderate complexity' if complexity_score < 60
+                else 'high complexity task'
+            )
+        }
+
+
 class ClaudeClient:
     """
     Unified Claude client supporting both API and CLI modes.
@@ -33,11 +100,16 @@ class ClaudeClient:
     - API mode: API key starts with 'sk-ant-'
     - CLI mode: API key is all 9s (routes to Claude Code CLI)
 
+    Features:
+    - Automatic model selection (Haiku vs Sonnet) based on complexity
+    - Response caching for cost savings
+    - Support for both API and CLI modes
+
     Example:
         ```python
-        # API mode
+        # API mode with auto model selection
         os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-...'
-        client = ClaudeClient()
+        client = ClaudeClient(enable_auto_model_selection=True)
 
         # CLI mode (uses Claude Code Max)
         os.environ['ANTHROPIC_API_KEY'] = '999999999...'
@@ -52,6 +124,7 @@ class ClaudeClient:
         max_tokens: int = 4096,
         temperature: float = 0.7,
         enable_cache: bool = True,
+        enable_auto_model_selection: bool = False,
     ):
         """
         Initialize Claude client.
@@ -59,10 +132,11 @@ class ClaudeClient:
         Args:
             api_key: Anthropic API key or '999...' for CLI mode.
                      If None, reads from ANTHROPIC_API_KEY env var.
-            model: Claude model to use (API mode only)
+            model: Claude model to use (default model, can be auto-selected)
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature (0.0-1.0)
             enable_cache: Enable response caching (default: True)
+            enable_auto_model_selection: Auto-select Haiku/Sonnet based on complexity
         """
         if not HAS_ANTHROPIC:
             raise ImportError(
@@ -78,9 +152,15 @@ class ClaudeClient:
             )
 
         self.model = model
+        self.default_model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.enable_cache = enable_cache
+        self.enable_auto_model_selection = enable_auto_model_selection
+
+        # Model variants for auto-selection
+        self.haiku_model = "claude-3-5-haiku-20241022"
+        self.sonnet_model = "claude-3-5-sonnet-20241022"
 
         # Detect mode
         self.is_cli_mode = self.api_key.replace('9', '') == ''
@@ -106,6 +186,11 @@ class ClaudeClient:
         self.cache_hits = 0
         self.cache_misses = 0
 
+        # Model selection statistics
+        self.haiku_requests = 0
+        self.sonnet_requests = 0
+        self.model_overrides = 0
+
     def generate(
         self,
         prompt: str,
@@ -114,6 +199,7 @@ class ClaudeClient:
         temperature: Optional[float] = None,
         stop_sequences: Optional[List[str]] = None,
         bypass_cache: bool = False,
+        model_override: Optional[str] = None,
     ) -> str:
         """
         Generate text from Claude.
@@ -125,6 +211,7 @@ class ClaudeClient:
             temperature: Override default temperature
             stop_sequences: Optional list of stop sequences
             bypass_cache: Force bypass cache for this request
+            model_override: Override auto model selection with specific model
 
         Returns:
             str: Generated text from Claude
@@ -140,6 +227,39 @@ class ClaudeClient:
             ```
         """
         try:
+            # Model selection logic
+            selected_model = self.model
+
+            if model_override:
+                # User override takes precedence
+                selected_model = model_override
+                self.model_overrides += 1
+                logger.debug(f"Model override: {selected_model}")
+            elif self.enable_auto_model_selection and not self.is_cli_mode:
+                # Auto-select based on complexity
+                complexity_analysis = ModelComplexity.estimate_complexity(
+                    prompt, system
+                )
+
+                if complexity_analysis['recommendation'] == 'haiku':
+                    selected_model = self.haiku_model
+                    self.haiku_requests += 1
+                else:
+                    selected_model = self.sonnet_model
+                    self.sonnet_requests += 1
+
+                logger.info(
+                    f"Auto-selected {selected_model} "
+                    f"(complexity: {complexity_analysis['complexity_score']}, "
+                    f"reason: {complexity_analysis['reason']})"
+                )
+            else:
+                # Track model usage
+                if 'haiku' in selected_model.lower():
+                    self.haiku_requests += 1
+                elif 'sonnet' in selected_model.lower():
+                    self.sonnet_requests += 1
+
             # Check cache first (if enabled and not bypassed)
             if self.cache and not bypass_cache:
                 cache_key_params = {
@@ -151,7 +271,7 @@ class ClaudeClient:
 
                 cached_response = self.cache.get(
                     prompt=prompt,
-                    model=self.model,
+                    model=selected_model,
                     bypass=False,
                     **cache_key_params
                 )
@@ -174,7 +294,7 @@ class ClaudeClient:
 
             # Call Claude API (auto-routes to CLI if API key is all 9s)
             response = self.client.messages.create(
-                model=self.model,
+                model=selected_model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature or self.temperature,
                 system=system or "",
@@ -209,7 +329,7 @@ class ClaudeClient:
 
                 self.cache.set(
                     prompt=prompt,
-                    model=self.model,
+                    model=selected_model,
                     response=text,
                     metadata=metadata,
                     **cache_key_params
@@ -373,6 +493,38 @@ class ClaudeClient:
             "cache_enabled": self.enable_cache,
         }
 
+        # Add model selection stats
+        if self.enable_auto_model_selection:
+            total_model_requests = self.haiku_requests + self.sonnet_requests
+            stats["model_selection"] = {
+                "auto_selection_enabled": True,
+                "haiku_requests": self.haiku_requests,
+                "sonnet_requests": self.sonnet_requests,
+                "total_model_requests": total_model_requests,
+                "haiku_percent": round(
+                    (self.haiku_requests / total_model_requests * 100)
+                    if total_model_requests > 0 else 0, 2
+                ),
+                "model_overrides": self.model_overrides,
+            }
+
+            # Estimate cost savings from using Haiku
+            # Haiku is ~5x cheaper: Sonnet $3/$15, Haiku ~$0.60/$3 per M tokens
+            # Simplified: assume each Haiku request saved ~80% of cost
+            if self.haiku_requests > 0 and not self.is_cli_mode:
+                avg_tokens_per_request = (
+                    (self.total_input_tokens + self.total_output_tokens) /
+                    self.total_requests if self.total_requests > 0 else 1500
+                )
+                # Estimate savings: 80% of what Sonnet would have cost
+                estimated_haiku_savings = (
+                    (avg_tokens_per_request / 1_000_000) *
+                    self.haiku_requests * 12 * 0.8  # ~80% savings
+                )
+                stats["model_selection"]["estimated_cost_saved_usd"] = round(
+                    estimated_haiku_savings, 2
+                )
+
         # Add detailed cache stats if available
         if self.cache:
             stats["cache_stats"] = self.cache.get_stats()
@@ -404,6 +556,9 @@ class ClaudeClient:
         self.total_requests = 0
         self.cache_hits = 0
         self.cache_misses = 0
+        self.haiku_requests = 0
+        self.sonnet_requests = 0
+        self.model_overrides = 0
 
 
 # Singleton instance for convenience
