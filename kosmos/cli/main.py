@@ -279,7 +279,7 @@ def register_commands():
     """Register all CLI command groups."""
     # Import command modules when they're implemented
     try:
-        from kosmos.cli.commands import run, status, history, cache, config as config_cmd, profile
+        from kosmos.cli.commands import run, status, history, cache, config as config_cmd, profile, graph
 
         # Register commands
         app.command(name="run")(run.run_research)
@@ -288,6 +288,7 @@ def register_commands():
         app.command(name="cache")(cache.manage_cache)
         app.command(name="config")(config_cmd.manage_config)
         app.command(name="profile")(profile.profile_command)
+        app.command(name="graph")(graph.manage_graph)
 
     except ImportError as e:
         # Commands not yet implemented - silently skip

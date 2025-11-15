@@ -308,6 +308,7 @@ def reset_singletons():
     from kosmos.knowledge.embeddings import reset_embedder
     from kosmos.knowledge.concept_extractor import reset_concept_extractor
     from kosmos.literature.reference_manager import reset_reference_manager
+    from kosmos.world_model.factory import reset_world_model
 
     try:
         reset_knowledge_graph()
@@ -315,6 +316,7 @@ def reset_singletons():
         reset_embedder()
         reset_concept_extractor()
         reset_reference_manager()
+        reset_world_model()
     except Exception:
         # Silently ignore errors during cleanup
         pass

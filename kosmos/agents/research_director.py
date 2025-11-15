@@ -23,6 +23,9 @@ from kosmos.core.workflow import (
 )
 from kosmos.core.llm import get_client
 from kosmos.models.hypothesis import Hypothesis, HypothesisStatus
+from kosmos.world_model import get_world_model, Entity, Relationship
+from kosmos.db import get_session
+from kosmos.db.operations import get_hypothesis, get_experiment, get_result
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +158,22 @@ class ResearchDirectorAgent(BaseAgent):
             except ImportError:
                 logger.warning("AsyncClaudeClient not available, using sequential LLM calls")
 
+        # Initialize world model for persistent knowledge graph
+        try:
+            self.wm = get_world_model()
+            # Create ResearchQuestion entity
+            question_entity = Entity.from_research_question(
+                question_text=research_question,
+                domain=domain,
+                created_by=f"ResearchDirectorAgent:{self.agent_id}"
+            )
+            self.question_entity_id = self.wm.add_entity(question_entity)
+            logger.info(f"Research question persisted to knowledge graph: {self.question_entity_id}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize world model: {e}. Continuing without graph persistence.")
+            self.wm = None
+            self.question_entity_id = None
+
         logger.info(
             f"ResearchDirector initialized for question: '{research_question}' "
             f"(max_iterations={self.max_iterations}, concurrent={self.enable_concurrent})"
@@ -216,6 +235,186 @@ class ResearchDirectorAgent(BaseAgent):
             self._workflow_lock.release()
 
     # ========================================================================
+    # GRAPH PERSISTENCE HELPERS
+    # ========================================================================
+
+    def _persist_hypothesis_to_graph(self, hypothesis_id: str, agent_name: str = "HypothesisGeneratorAgent"):
+        """
+        Persist hypothesis to knowledge graph with SPAWNED_BY relationship.
+
+        Args:
+            hypothesis_id: ID of hypothesis to persist
+            agent_name: Name of agent that created the hypothesis
+        """
+        if not self.wm or not self.question_entity_id:
+            return  # Graph persistence disabled
+
+        try:
+            with get_session() as session:
+                # Fetch hypothesis from database
+                hypothesis = get_hypothesis(session, hypothesis_id)
+                if not hypothesis:
+                    logger.warning(f"Hypothesis {hypothesis_id} not found in database")
+                    return
+
+                # Convert to Entity and persist
+                entity = Entity.from_hypothesis(hypothesis, created_by=agent_name)
+                entity_id = self.wm.add_entity(entity)
+
+                # Create SPAWNED_BY relationship to research question
+                rel = Relationship.with_provenance(
+                    source_id=entity_id,
+                    target_id=self.question_entity_id,
+                    rel_type="SPAWNED_BY",
+                    agent=agent_name,
+                    generation=hypothesis.generation,
+                    iteration=self.research_plan.iteration_count
+                )
+                self.wm.add_relationship(rel)
+
+                # If refined from parent, add REFINED_FROM relationship
+                if hypothesis.parent_hypothesis_id:
+                    parent_rel = Relationship.with_provenance(
+                        source_id=entity_id,
+                        target_id=hypothesis.parent_hypothesis_id,
+                        rel_type="REFINED_FROM",
+                        agent=agent_name,
+                        refinement_count=hypothesis.refinement_count
+                    )
+                    self.wm.add_relationship(parent_rel)
+
+                logger.debug(f"Persisted hypothesis {hypothesis_id} to graph")
+
+        except Exception as e:
+            logger.warning(f"Failed to persist hypothesis {hypothesis_id} to graph: {e}")
+
+    def _persist_protocol_to_graph(self, protocol_id: str, hypothesis_id: str, agent_name: str = "ExperimentDesignerAgent"):
+        """
+        Persist experiment protocol to knowledge graph with TESTS relationship.
+
+        Args:
+            protocol_id: ID of protocol to persist
+            hypothesis_id: ID of hypothesis being tested
+            agent_name: Name of agent that created the protocol
+        """
+        if not self.wm:
+            return
+
+        try:
+            with get_session() as session:
+                # Fetch protocol from database
+                protocol = get_experiment(session, protocol_id)
+                if not protocol:
+                    logger.warning(f"Protocol {protocol_id} not found in database")
+                    return
+
+                # Convert to Entity and persist
+                entity = Entity.from_protocol(protocol, created_by=agent_name)
+                entity_id = self.wm.add_entity(entity)
+
+                # Create TESTS relationship to hypothesis
+                rel = Relationship.with_provenance(
+                    source_id=entity_id,
+                    target_id=hypothesis_id,
+                    rel_type="TESTS",
+                    agent=agent_name,
+                    iteration=self.research_plan.iteration_count
+                )
+                self.wm.add_relationship(rel)
+
+                logger.debug(f"Persisted protocol {protocol_id} to graph")
+
+        except Exception as e:
+            logger.warning(f"Failed to persist protocol {protocol_id} to graph: {e}")
+
+    def _persist_result_to_graph(self, result_id: str, protocol_id: str, hypothesis_id: str, agent_name: str = "Executor"):
+        """
+        Persist experiment result to knowledge graph with PRODUCED_BY relationship.
+
+        Args:
+            result_id: ID of result to persist
+            protocol_id: ID of protocol that produced this result
+            hypothesis_id: ID of hypothesis being tested
+            agent_name: Name of agent that created the result
+        """
+        if not self.wm:
+            return
+
+        try:
+            with get_session() as session:
+                # Fetch result from database
+                result = get_result(session, result_id)
+                if not result:
+                    logger.warning(f"Result {result_id} not found in database")
+                    return
+
+                # Convert to Entity and persist
+                entity = Entity.from_result(result, created_by=agent_name)
+                entity_id = self.wm.add_entity(entity)
+
+                # Create PRODUCED_BY relationship to protocol
+                rel = Relationship.with_provenance(
+                    source_id=entity_id,
+                    target_id=protocol_id,
+                    rel_type="PRODUCED_BY",
+                    agent=agent_name,
+                    iteration=self.research_plan.iteration_count
+                )
+                self.wm.add_relationship(rel)
+
+                # Create TESTS relationship to hypothesis
+                tests_rel = Relationship.with_provenance(
+                    source_id=entity_id,
+                    target_id=hypothesis_id,
+                    rel_type="TESTS",
+                    agent=agent_name
+                )
+                self.wm.add_relationship(tests_rel)
+
+                logger.debug(f"Persisted result {result_id} to graph")
+
+        except Exception as e:
+            logger.warning(f"Failed to persist result {result_id} to graph: {e}")
+
+    def _add_support_relationship(self, result_id: str, hypothesis_id: str, supports: bool, confidence: float, p_value: float = None, effect_size: float = None):
+        """
+        Add SUPPORTS or REFUTES relationship based on result analysis.
+
+        Args:
+            result_id: ID of result entity
+            hypothesis_id: ID of hypothesis entity
+            supports: True if result supports hypothesis, False if refutes
+            confidence: Confidence score from analyst
+            p_value: Statistical p-value if available
+            effect_size: Effect size if available
+        """
+        if not self.wm:
+            return
+
+        try:
+            rel_type = "SUPPORTS" if supports else "REFUTES"
+            metadata = {"iteration": self.research_plan.iteration_count}
+            if p_value is not None:
+                metadata["p_value"] = p_value
+            if effect_size is not None:
+                metadata["effect_size"] = effect_size
+
+            rel = Relationship.with_provenance(
+                source_id=result_id,
+                target_id=hypothesis_id,
+                rel_type=rel_type,
+                agent="DataAnalystAgent",
+                confidence=confidence,
+                **metadata
+            )
+            self.wm.add_relationship(rel)
+
+            logger.debug(f"Added {rel_type} relationship: result {result_id} -> hypothesis {hypothesis_id}")
+
+        except Exception as e:
+            logger.warning(f"Failed to add {rel_type} relationship: {e}")
+
+    # ========================================================================
     # MESSAGE HANDLING
     # ========================================================================
 
@@ -273,6 +472,10 @@ class ResearchDirectorAgent(BaseAgent):
             for hyp_id in hypothesis_ids:
                 self.research_plan.add_hypothesis(hyp_id)
 
+        # Persist hypotheses to knowledge graph
+        for hyp_id in hypothesis_ids:
+            self._persist_hypothesis_to_graph(hyp_id, agent_name="HypothesisGeneratorAgent")
+
         # Update strategy stats (thread-safe)
         with self._strategy_stats_context():
             self.strategy_stats["hypothesis_generation"]["attempts"] += 1
@@ -307,6 +510,10 @@ class ResearchDirectorAgent(BaseAgent):
         with self._research_plan_context():
             self.research_plan.add_experiment(protocol_id)
 
+        # Persist protocol to knowledge graph
+        if protocol_id and hypothesis_id:
+            self._persist_protocol_to_graph(protocol_id, hypothesis_id, agent_name="ExperimentDesignerAgent")
+
         # Update strategy stats (thread-safe)
         with self._strategy_stats_context():
             self.strategy_stats["experiment_design"]["attempts"] += 1
@@ -336,6 +543,7 @@ class ResearchDirectorAgent(BaseAgent):
         result_id = content.get("result_id")
         protocol_id = content.get("protocol_id")
         status = content.get("status")
+        hypothesis_id = content.get("hypothesis_id")  # May not be present
 
         logger.info(f"Received experiment result: {result_id} (status: {status})")
 
@@ -343,6 +551,21 @@ class ResearchDirectorAgent(BaseAgent):
         with self._research_plan_context():
             self.research_plan.add_result(result_id)
             self.research_plan.mark_experiment_complete(protocol_id)
+
+        # Persist result to knowledge graph (get hypothesis_id from protocol if needed)
+        if result_id and protocol_id:
+            if not hypothesis_id:
+                # Fetch hypothesis_id from protocol
+                try:
+                    with get_session() as session:
+                        protocol = get_experiment(session, protocol_id)
+                        if protocol:
+                            hypothesis_id = protocol.hypothesis_id
+                except Exception as e:
+                    logger.warning(f"Failed to fetch hypothesis_id from protocol: {e}")
+
+            if hypothesis_id:
+                self._persist_result_to_graph(result_id, protocol_id, hypothesis_id, agent_name="Executor")
 
         # Transition to analyzing state (thread-safe)
         with self._workflow_context():
@@ -374,6 +597,9 @@ class ResearchDirectorAgent(BaseAgent):
         result_id = content.get("result_id")
         hypothesis_id = content.get("hypothesis_id")
         hypothesis_supported = content.get("hypothesis_supported")
+        confidence = content.get("confidence", 0.8)  # Default confidence
+        p_value = content.get("p_value")
+        effect_size = content.get("effect_size")
 
         logger.info(
             f"Received result interpretation for {result_id}: "
@@ -389,6 +615,17 @@ class ResearchDirectorAgent(BaseAgent):
             else:
                 # Inconclusive
                 self.research_plan.mark_tested(hypothesis_id)
+
+        # Add SUPPORTS/REFUTES relationship to knowledge graph
+        if result_id and hypothesis_id and hypothesis_supported is not None:
+            self._add_support_relationship(
+                result_id,
+                hypothesis_id,
+                supports=hypothesis_supported,
+                confidence=confidence,
+                p_value=p_value,
+                effect_size=effect_size
+            )
 
         # Transition to refining state (thread-safe)
         with self._workflow_context():
@@ -427,6 +664,10 @@ class ResearchDirectorAgent(BaseAgent):
             for hyp_id in refined_ids:
                 self.research_plan.add_hypothesis(hyp_id)
 
+        # Persist refined hypotheses to knowledge graph
+        for hyp_id in refined_ids:
+            self._persist_hypothesis_to_graph(hyp_id, agent_name="HypothesisRefiner")
+
         # Update strategy stats (thread-safe)
         with self._strategy_stats_context():
             self.strategy_stats["hypothesis_refinement"]["attempts"] += 1
@@ -458,6 +699,19 @@ class ResearchDirectorAgent(BaseAgent):
             with self._research_plan_context():
                 self.research_plan.has_converged = True
                 self.research_plan.convergence_reason = reason
+
+            # Add convergence annotation to research question in knowledge graph
+            if self.wm and self.question_entity_id:
+                try:
+                    from kosmos.world_model.models import Annotation
+                    convergence_annotation = Annotation(
+                        text=f"Research converged: {reason}",
+                        created_by="ConvergenceDetector"
+                    )
+                    self.wm.add_annotation(self.question_entity_id, convergence_annotation)
+                    logger.debug("Added convergence annotation to research question")
+                except Exception as e:
+                    logger.warning(f"Failed to add convergence annotation: {e}")
 
             # Transition to converged state (thread-safe)
             with self._workflow_context():

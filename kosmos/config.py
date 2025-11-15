@@ -640,6 +640,37 @@ class DevelopmentConfig(BaseSettings):
     model_config = SettingsConfigDict(populate_by_name=True)
 
 
+class WorldModelConfig(BaseSettings):
+    """World model configuration for persistent knowledge graphs."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable persistent knowledge graphs",
+        alias="WORLD_MODEL_ENABLED"
+    )
+
+    mode: Literal["simple", "production"] = Field(
+        default="simple",
+        description="Storage mode: simple (Neo4j) or production (polyglot)",
+        alias="WORLD_MODEL_MODE"
+    )
+
+    project: Optional[str] = Field(
+        default=None,
+        description="Default project namespace for multi-project support",
+        alias="WORLD_MODEL_PROJECT"
+    )
+
+    auto_save_interval: int = Field(
+        default=300,
+        ge=0,
+        description="Auto-export interval in seconds (0 = disabled)",
+        alias="WORLD_MODEL_AUTO_SAVE_INTERVAL"
+    )
+
+    model_config = SettingsConfigDict(populate_by_name=True)
+
+
 def _optional_openai_config() -> Optional[OpenAIConfig]:
     """Create OpenAIConfig only if OPENAI_API_KEY is set."""
     import os
@@ -710,6 +741,7 @@ class KosmosConfig(BaseSettings):
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     development: DevelopmentConfig = Field(default_factory=DevelopmentConfig)
+    world_model: WorldModelConfig = Field(default_factory=WorldModelConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -792,6 +824,7 @@ class KosmosConfig(BaseSettings):
             "performance": self.performance.model_dump(),
             "monitoring": self.monitoring.model_dump(),
             "development": self.development.model_dump(),
+            "world_model": self.world_model.model_dump(),
         }
 
         # Add provider-specific configs if present
