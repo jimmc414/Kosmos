@@ -108,6 +108,11 @@ class PaperEmbedder:
         """
         text = self._paper_to_text(paper)
 
+        # Check if model is available
+        if self.model is None:
+            logger.warning("Embedding model not available. Returning zero vector.")
+            return np.zeros(self.embedding_dim, dtype=np.float32)
+
         try:
             embedding = self.model.encode(
                 text,
@@ -150,6 +155,11 @@ class PaperEmbedder:
         if not papers:
             return np.array([])
 
+        # Check if model is available
+        if self.model is None:
+            logger.warning("Embedding model not available. Returning zero vectors.")
+            return np.zeros((len(papers), self.embedding_dim), dtype=np.float32)
+
         texts = [self._paper_to_text(paper) for paper in papers]
 
         try:
@@ -187,6 +197,11 @@ class PaperEmbedder:
             top_indices = np.argsort(similarities)[::-1][:5]
             ```
         """
+        # Check if model is available
+        if self.model is None:
+            logger.warning("Embedding model not available. Returning zero vector.")
+            return np.zeros(self.embedding_dim, dtype=np.float32)
+
         try:
             embedding = self.model.encode(
                 query,
