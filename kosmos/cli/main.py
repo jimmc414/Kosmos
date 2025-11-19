@@ -239,13 +239,15 @@ def doctor():
 
     # Check database
     try:
-        from kosmos.db import get_session
+        from kosmos.db import get_session, init_from_config
+        # Initialize database first
+        init_from_config()
         with get_session() as session:
             # Just open and close to verify connection
             pass
         checks.append(("Database", "Connected", True))
-    except Exception:
-        checks.append(("Database", "Error", False))
+    except Exception as e:
+        checks.append(("Database", f"Error: {str(e)[:50]}", False))
 
     # Display results
     table = create_table(

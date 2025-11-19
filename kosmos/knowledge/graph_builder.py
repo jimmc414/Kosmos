@@ -69,6 +69,9 @@ class GraphBuilder:
         if add_semantic_edges:
             self.vector_db = get_vector_db()
             self.embedder = get_embedder()
+        else:
+            self.vector_db = None
+            self.embedder = None
 
         # Track statistics
         self.stats = {
@@ -369,6 +372,11 @@ class GraphBuilder:
             return
 
         logger.info("Computing semantic similarity edges...")
+
+        # Check if vector_db is initialized
+        if self.vector_db is None:
+            logger.error("Vector DB not initialized for semantic edges")
+            return
 
         # Ensure papers are in vector DB
         try:

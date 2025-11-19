@@ -163,6 +163,11 @@ class PaperVectorDB:
         metadatas = [self._paper_metadata(paper) for paper in papers]
         documents = [self._paper_document(paper) for paper in papers]
 
+        # Check if collection is initialized
+        if self.collection is None:
+            logger.error("Vector database collection not initialized. Cannot add papers.")
+            return
+
         # Add in batches
         for i in range(0, len(papers), batch_size):
             batch_end = min(i + batch_size, len(papers))
@@ -209,6 +214,11 @@ class PaperVectorDB:
                 print(f"{result['title']}: {result['score']:.3f}")
             ```
         """
+        # Check if collection is initialized
+        if self.collection is None:
+            logger.error("Vector database collection not initialized. Cannot search.")
+            return []
+
         # Compute query embedding
         query_embedding = self.embedder.embed_query(query)
 
@@ -324,6 +334,10 @@ class PaperVectorDB:
         Args:
             paper_id: Paper identifier
         """
+        if self.collection is None:
+            logger.error("Vector database collection not initialized. Cannot delete paper.")
+            return
+
         try:
             self.collection.delete(ids=[paper_id])
             logger.info(f"Deleted paper {paper_id}")
@@ -337,6 +351,8 @@ class PaperVectorDB:
         Returns:
             Paper count
         """
+        if self.collection is None:
+            return 0
         return self.collection.count()
 
     def get_stats(self) -> Dict[str, Any]:

@@ -108,6 +108,11 @@ class PaperEmbedder:
         """
         text = self._paper_to_text(paper)
 
+        # Check if model is initialized
+        if self.model is None:
+            logger.warning("Embedding model not initialized. Returning zero vector.")
+            return np.zeros(self.embedding_dim, dtype=np.float32)
+
         try:
             embedding = self.model.encode(
                 text,
