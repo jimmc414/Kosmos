@@ -95,6 +95,7 @@ class StatisticalTestResult(BaseModel):
 
     # Interpretation
     interpretation: Optional[str] = Field(None, description="Human-readable interpretation")
+    is_primary: bool = Field(False, description="Whether this is the primary test for the experiment")
 
 
 class VariableResult(BaseModel):
@@ -164,6 +165,8 @@ class ExperimentResult(BaseModel):
     # Key results
     primary_p_value: Optional[float] = Field(None, ge=0, le=1, description="Primary p-value")
     primary_effect_size: Optional[float] = Field(None, description="Primary effect size")
+    primary_ci_lower: Optional[float] = Field(None, description="Lower bound of the primary confidence interval")
+    primary_ci_upper: Optional[float] = Field(None, description="Upper bound of the primary confidence interval")
     supports_hypothesis: Optional[bool] = Field(
         None,
         description="Whether results support the hypothesis"
@@ -206,12 +209,13 @@ class ExperimentResult(BaseModel):
             raise ValueError("Duplicate test names in statistical_tests")
         return v
 
-    @field_validator('primary_test')
+    @field_validator('primary_test', mode='before')
     @classmethod
     def validate_primary_test(cls, v: Optional[str], info) -> Optional[str]:
         """Validate primary test exists in statistical_tests."""
         if v is not None and 'statistical_tests' in info.data:
-            test_names = [test.test_name for test in info.data['statistical_tests']]
+            # Pydantic V2 validators run before the model is created, so we're working with dicts
+            test_names = [test.get('test_name') for test in info.data['statistical_tests']]
             if v not in test_names:
                 raise ValueError(f"Primary test '{v}' not found in statistical_tests")
         return v

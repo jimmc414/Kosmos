@@ -317,8 +317,12 @@ def reset_singletons():
         reset_concept_extractor()
         reset_reference_manager()
         reset_world_model()
+    except NameError:
+        # If a reset function doesn't exist, log it but don't fail the test
+        import logging
+        logging.warning("One or more reset functions not found during test cleanup.")
     except Exception:
-        # Silently ignore errors during cleanup
+        # Silently ignore other errors during cleanup
         pass
 
 

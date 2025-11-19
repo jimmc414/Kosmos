@@ -106,6 +106,8 @@ class PaperEmbedder:
             print(embedding.shape)  # (768,)
             ```
         """
+        if self.model is None:
+            raise ImportError("sentence-transformers is not installed. Please install it to use the embedder.")
         text = self._paper_to_text(paper)
 
         try:
@@ -147,6 +149,8 @@ class PaperEmbedder:
             similarity = np.dot(embeddings[0], embeddings[1])
             ```
         """
+        if self.model is None:
+            raise ImportError("sentence-transformers is not installed. Please install it to use the embedder.")
         if not papers:
             return np.array([])
 
@@ -187,6 +191,8 @@ class PaperEmbedder:
             top_indices = np.argsort(similarities)[::-1][:5]
             ```
         """
+        if self.model is None:
+            raise ImportError("sentence-transformers is not installed. Please install it to use the embedder.")
         try:
             embedding = self.model.encode(
                 query,

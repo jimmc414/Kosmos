@@ -76,8 +76,6 @@ def sample_experiment_result():
                 std=2.1,
                 min=6.2,
                 max=15.8,
-                q1=9.1,
-                q3=11.9,
                 n_samples=50,
                 n_missing=0
             ),
@@ -89,8 +87,6 @@ def sample_experiment_result():
                 std=2.3,
                 min=4.5,
                 max=13.2,
-                q1=7.2,
-                q3=10.1,
                 n_samples=50,
                 n_missing=0
             )
@@ -103,7 +99,7 @@ def sample_experiment_result():
             random_seed=42
         ),
         raw_data={"mean_diff": 1.7},
-        plots_generated=[],
+        generated_files=[],
         version=1,
         created_at=datetime.utcnow()
     )
@@ -114,16 +110,12 @@ def sample_hypothesis():
     """Create sample hypothesis."""
     return Hypothesis(
         id="hyp-001",
-        research_question_id="rq-001",
+        research_question="Does treatment X increase outcome Y compared to control?",
         statement="Treatment X increases outcome Y compared to control",
         rationale="Prior studies suggest mechanism via pathway Z",
         domain="biology",
-        experiment_type="comparative",
         testability_score=0.9,
         novelty_score=0.7,
-        feasibility_score=0.8,
-        expected_outcome="Positive effect with medium-large effect size",
-        variables=["treatment", "control", "outcome_Y"],
         created_at=datetime.utcnow()
     )
 

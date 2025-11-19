@@ -143,7 +143,7 @@ class PubMedClient(BaseLiteratureClient):
             record = Entrez.read(handle)
             handle.close()
 
-            pmids = record["IdList"]
+            pmids = record.get("IdList", [])
 
             if not pmids:
                 self.logger.info(f"No results found for query: {query}")
@@ -250,7 +250,7 @@ class PubMedClient(BaseLiteratureClient):
                 return []
 
             # Extract PMIDs of references
-            ref_pmids = [link["Id"] for link in record[0]["LinkSetDb"][0]["Link"]][:max_refs]
+            ref_pmids = [link["Id"] for link in record[0]["LinkSetDb"][0].get("Link", [])][:max_refs]
 
             # Fetch paper details
             papers = self._fetch_paper_details(ref_pmids)

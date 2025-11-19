@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Any, Callable
 import logging
 from pathlib import Path
 
-from kosmos.models.experiment import ExperimentProtocol, ProtocolStep, ExperimentType
+from kosmos.models.experiment import ExperimentProtocol, ProtocolStep, ExperimentType, StatisticalTest
 from kosmos.models.hypothesis import Hypothesis
 from kosmos.core.llm import ClaudeClient
 from kosmos.core.prompts import EXPERIMENT_DESIGNER
@@ -62,7 +62,7 @@ class TTestComparisonCodeTemplate(CodeTemplate):
 
         # Check for t-test in statistical tests
         for test in protocol.statistical_tests:
-            if 't_test' in test.test_type.lower() or 't-test' in test.test_type.lower():
+            if 't_test' in test.test_type.value.lower() or 't-test' in test.test_type.value.lower():
                 return True
 
         return False
@@ -136,7 +136,7 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
 
         # Check for correlation in statistical tests or protocol name
         for test in protocol.statistical_tests:
-            if 'correlation' in test.test_type.lower() or 'regression' in test.test_type.lower():
+            if 'correlation' in test.test_type.value.lower() or 'regression' in test.test_type.value.lower():
                 return True
 
         return 'correlation' in protocol.name.lower()

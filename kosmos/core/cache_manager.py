@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 class CacheType(Enum):
     """Types of caches managed by the cache manager."""
 
-    CLAUDE = "claude"  # Claude API responses
-    EXPERIMENT = "experiment"  # Experiment results
-    LITERATURE = "literature"  # Literature API responses (existing)
-    EMBEDDING = "embedding"  # Embedding computations
-    GENERAL = "general"  # General-purpose cache
+    CLAUDE = "claude"
+    EXPERIMENT = "experiment"
+    EMBEDDING = "embedding"
+    GENERAL = "general"
+    LITERATURE = "literature"
 
 
 class CacheManager:

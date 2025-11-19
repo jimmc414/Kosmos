@@ -648,7 +648,37 @@ def get_provider() -> LLMProvider:
     client = get_client(use_provider_system=True)
 
     # Ensure we return a provider instance
+    if isinstance(client, ClaudeClient):
+        return ClaudeClientAdapter(client)
     if not isinstance(client, LLMProvider):
         raise TypeError(f"Expected LLMProvider, got {type(client)}")
 
     return client
+
+class ClaudeClientAdapter(LLMProvider):
+    def __init__(self, claude_client: ClaudeClient):
+        super().__init__(config={})
+        self.claude_client = claude_client
+
+    def generate(self, prompt: str, **kwargs) -> 'LLMResponse':
+        content = self.claude_client.generate(prompt, **kwargs)
+        return LLMResponse(content=content, usage=None, model=self.claude_client.model)
+
+    async def generate_async(self, prompt: str, **kwargs) -> 'LLMResponse':
+        content = self.claude_client.generate(prompt, **kwargs)
+        return LLMResponse(content=content, usage=None, model=self.claude_client.model)
+
+    def generate_with_messages(self, messages: List['Message'], **kwargs) -> 'LLMResponse':
+        content = self.claude_client.generate_with_messages(messages, **kwargs)
+        return LLMResponse(content=content, usage=None, model=self.claude_client.model)
+
+    def generate_structured(self, prompt: str, schema: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        return self.claude_client.generate_structured(prompt, schema, **kwargs)
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.claude_client.model,
+            "max_tokens": self.claude_client.max_tokens,
+            "cost_per_input_token": 0.0,
+            "cost_per_output_token": 0.0,
+        }

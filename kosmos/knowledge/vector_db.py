@@ -150,6 +150,8 @@ class PaperVectorDB:
             db.add_papers(papers, embeddings=embeddings)
             ```
         """
+        if self.collection is None:
+            raise ImportError("chromadb is not installed. Please install it to use the vector database.")
         if not papers:
             return
 

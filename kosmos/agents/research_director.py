@@ -26,6 +26,7 @@ from kosmos.models.hypothesis import Hypothesis, HypothesisStatus
 from kosmos.world_model import get_world_model, Entity, Relationship
 from kosmos.db import get_session
 from kosmos.db.operations import get_hypothesis, get_experiment, get_result
+from kosmos.execution.result_collector import ResultCollector
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ class ResearchDirectorAgent(BaseAgent):
             max_iterations=self.max_iterations
         )
 
+        self.result_collector = ResultCollector()
         self.workflow = ResearchWorkflow(
             initial_state=WorkflowState.INITIALIZING,
             research_plan=self.research_plan
@@ -557,36 +559,42 @@ class ResearchDirectorAgent(BaseAgent):
 
         logger.info(f"Received experiment result: {result_id} (status: {status})")
 
-        # Update research plan (thread-safe)
-        with self._research_plan_context():
-            self.research_plan.add_result(result_id)
-            self.research_plan.mark_experiment_complete(protocol_id)
+        try:
+            with get_session() as session:
+                protocol = get_experiment(session, protocol_id)
+                if not protocol:
+                    raise ValueError(f"Protocol {protocol_id} not found for result processing")
 
-        # Persist result to knowledge graph (get hypothesis_id from protocol if needed)
-        if result_id and protocol_id:
-            if not hypothesis_id:
-                # Fetch hypothesis_id from protocol
-                try:
-                    with get_session() as session:
-                        protocol = get_experiment(session, protocol_id)
-                        if protocol:
-                            hypothesis_id = protocol.hypothesis_id
-                except Exception as e:
-                    logger.warning(f"Failed to fetch hypothesis_id from protocol: {e}")
+                # Use ResultCollector to process and store the result
+                experiment_result = self.result_collector.collect(
+                    protocol=protocol,
+                    execution_output=content,  # Pass the full message content as output
+                    session=session
+                )
+                result_id = experiment_result.id
 
-            if hypothesis_id:
-                self._persist_result_to_graph(result_id, protocol_id, hypothesis_id, agent_name="Executor")
+                # Update research plan (thread-safe)
+                with self._research_plan_context():
+                    self.research_plan.add_result(result_id)
+                    self.research_plan.mark_experiment_complete(protocol_id)
 
-        # Transition to analyzing state (thread-safe)
-        with self._workflow_context():
-            self.workflow.transition_to(
-                WorkflowState.ANALYZING,
-                action=f"Analyze result {result_id}"
-            )
+                # Persist result to knowledge graph
+                if hypothesis_id:
+                    self._persist_result_to_graph(result_id, protocol_id, hypothesis_id, agent_name="Executor")
 
-        # Send to DataAnalystAgent for interpretation
-        next_action = NextAction.ANALYZE_RESULT
-        self._execute_next_action(next_action)
+            # Transition to analyzing state (thread-safe)
+            with self._workflow_context():
+                self.workflow.transition_to(
+                    WorkflowState.ANALYZING,
+                    action=f"Analyze result {result_id}"
+                )
+
+            # Send to DataAnalystAgent for interpretation
+            self._send_to_data_analyst(result_id=result_id, hypothesis_id=hypothesis_id)
+
+        except Exception as e:
+            logger.error(f"Failed to process experiment result for protocol {protocol_id}: {e}")
+            self.errors_encountered += 1
 
     def _handle_data_analyst_response(self, message: AgentMessage):
         """

@@ -243,20 +243,20 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
                 progress.update(iteration_task, completed=iteration + 1)
 
                 # Update phase-specific progress based on workflow state
-                workflow_state = status.get("workflow_state", "INITIALIZING")
+                workflow_state = status.get("workflow_state", "initializing")
 
-                if workflow_state == "GENERATING_HYPOTHESES":
+                if workflow_state == "generating_hypotheses":
                     progress.update(hypothesis_task, completed=50)
-                elif workflow_state == "DESIGNING_EXPERIMENTS":
+                elif workflow_state == "designing_experiments":
                     progress.update(hypothesis_task, completed=100)
                     progress.update(experiment_task, completed=50)
-                elif workflow_state == "EXECUTING_EXPERIMENTS":
+                elif workflow_state == "executing":
                     progress.update(experiment_task, completed=100)
                     progress.update(execution_task, completed=50)
-                elif workflow_state == "ANALYZING_RESULTS":
+                elif workflow_state == "analyzing":
                     progress.update(execution_task, completed=100)
                     progress.update(analysis_task, completed=50)
-                elif workflow_state in ["REFINING_HYPOTHESES", "CHECKING_CONVERGENCE"]:
+                elif workflow_state == "refining":
                     progress.update(analysis_task, completed=100)
 
                 # Check for convergence
@@ -293,21 +293,24 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
             try:
                 with get_session() as session:
                     # Fetch hypotheses from database using IDs
-                    for h_id in director.research_plan.hypothesis_pool:
-                        hypothesis = get_hypothesis(session, h_id)
-                        if hypothesis:
-                            hypotheses_data.append(hypothesis.to_dict() if hasattr(hypothesis, 'to_dict') else str(hypothesis))
+                    if director.research_plan:
+                        for h_id in director.research_plan.hypothesis_pool:
+                            hypothesis = get_hypothesis(session, h_id)
+                            if hypothesis:
+                                hypotheses_data.append(hypothesis.to_dict() if hasattr(hypothesis, 'to_dict') else str(hypothesis))
 
                     # Fetch experiments from database using IDs
-                    for e_id in director.research_plan.completed_experiments:
-                        experiment = get_experiment(session, e_id)
-                        if experiment:
-                            experiments_data.append(experiment.to_dict() if hasattr(experiment, 'to_dict') else str(experiment))
+                    if director.research_plan:
+                        for e_id in director.research_plan.completed_experiments:
+                            experiment = get_experiment(session, e_id)
+                            if experiment:
+                                experiments_data.append(experiment.to_dict() if hasattr(experiment, 'to_dict') else str(experiment))
             except Exception as e:
                 logger.warning(f"Could not fetch all objects from database: {e}")
                 # Fallback: use IDs as strings
-                hypotheses_data = list(director.research_plan.hypothesis_pool)
-                experiments_data = list(director.research_plan.completed_experiments)
+                if director.research_plan:
+                    hypotheses_data = list(director.research_plan.hypothesis_pool)
+                    experiments_data = list(director.research_plan.completed_experiments)
 
             results = {
                 "id": f"research_{int(time.time())}",

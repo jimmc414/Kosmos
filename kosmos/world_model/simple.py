@@ -141,14 +141,23 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         }
 
         # Use existing create_paper method (handles merge logic)
-        node = self.graph.create_paper(
-            paper_id=entity.id,
+        from kosmos.literature.base_client import PaperMetadata
+        paper_meta = PaperMetadata(
             title=title,
             authors=authors,
             year=year,
             doi=doi,
             abstract=abstract,
-            metadata=metadata,
+            # The following fields are not directly available in the Entity
+            # but are required by PaperMetadata. Providing default values.
+            primary_identifier=entity.id,
+            fields=[],
+            venue="",
+            citation_count=0,
+            url=entity.properties.get("url", "")
+        )
+        node = self.graph.create_paper(
+            paper=paper_meta,
             merge=merge
         )
 
@@ -171,7 +180,6 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         node = self.graph.create_concept(
             name=name,
             description=description,
-            metadata=metadata,
             merge=merge
         )
 
@@ -193,8 +201,6 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         node = self.graph.create_author(
             name=name,
             affiliation=affiliation,
-            email=email,
-            metadata=metadata,
             merge=merge
         )
 
@@ -217,7 +223,6 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
             name=name,
             description=description,
             category=category,
-            metadata=metadata,
             merge=merge
         )
 
@@ -444,10 +449,8 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         if relationship.type == "CITES":
             # Note: create_citation expects paper_id, cited_paper_id
             self.graph.create_citation(
-                paper_id=relationship.source_id,
-                cited_paper_id=relationship.target_id,
-                context=relationship.properties.get("context"),
-                section=relationship.properties.get("section")
+                citing_paper_id=relationship.source_id,
+                cited_paper_id=relationship.target_id
             )
             return relationship.id
 

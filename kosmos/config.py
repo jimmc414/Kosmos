@@ -116,12 +116,12 @@ class ResearchConfig(BaseSettings):
         description="Maximum research iterations",
         alias="MAX_RESEARCH_ITERATIONS"
     )
-    enabled_domains: Union[str, List[str]] = Field(
+    enabled_domains: List[str] = Field(
         default=["biology", "physics", "chemistry", "neuroscience"],
         description="Enabled scientific domains",
         alias="ENABLED_DOMAINS"
     )
-    enabled_experiment_types: Union[str, List[str]] = Field(
+    enabled_experiment_types: List[str] = Field(
         default=["computational", "data_analysis", "literature_synthesis"],
         description="Enabled experiment types",
         alias="ENABLED_EXPERIMENT_TYPES"
@@ -145,45 +145,12 @@ class ResearchConfig(BaseSettings):
         alias="RESEARCH_BUDGET_USD"
     )
 
-    @field_validator("enabled_domains", mode="before")
+    @field_validator("enabled_domains", "enabled_experiment_types", mode="before")
     @classmethod
-    def parse_domains(cls, v):
-        """Parse comma-separated domain string or handle empty values."""
-        if v is None or v == "":
-            # Return default if empty - will use field default
-            return ["biology", "physics", "chemistry", "neuroscience"]
+    def _parse_comma_separated_list(cls, v):
         if isinstance(v, str):
-            # Handle comma-separated values
-            domains = [d.strip() for d in v.split(",") if d.strip()]
-            if not domains:
-                return ["biology", "physics", "chemistry", "neuroscience"]
-            return domains
+            return [item.strip() for item in v.split(',') if item.strip()]
         return v
-
-    @field_validator("enabled_experiment_types", mode="before")
-    @classmethod
-    def parse_experiment_types(cls, v):
-        """Parse comma-separated experiment types string or handle empty values."""
-        if v is None or v == "":
-            # Return default if empty
-            return ["computational", "data_analysis", "literature_synthesis"]
-        if isinstance(v, str):
-            # Handle comma-separated values
-            types = [e.strip() for e in v.split(",") if e.strip()]
-            if not types:
-                return ["computational", "data_analysis", "literature_synthesis"]
-            return types
-        return v
-
-    @model_validator(mode="after")
-    def ensure_lists(self):
-        """Ensure enabled_domains and enabled_experiment_types are always lists."""
-        # Convert any remaining strings to lists (shouldn't happen with validators, but safety)
-        if isinstance(self.enabled_domains, str):
-            self.enabled_domains = [d.strip() for d in self.enabled_domains.split(",") if d.strip()]
-        if isinstance(self.enabled_experiment_types, str):
-            self.enabled_experiment_types = [e.strip() for e in self.enabled_experiment_types.split(",") if e.strip()]
-        return self
 
     model_config = SettingsConfigDict(populate_by_name=True)
 

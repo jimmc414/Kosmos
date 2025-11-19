@@ -86,6 +86,10 @@ dependencies = [
     "rich>=13.0.0",
     "click>=8.1.0",
     "typer>=0.9.0",
+
+    # Health monitoring and system info
+    "psutil>=5.9.0",
+    "redis>=5.0.0",
 ]
 
 [project.optional-dependencies]

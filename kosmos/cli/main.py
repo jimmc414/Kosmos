@@ -239,7 +239,8 @@ def doctor():
 
     # Check database
     try:
-        from kosmos.db import get_session
+        from kosmos.db import get_session, init_from_config
+        init_from_config()  # Ensure database is initialized
         with get_session() as session:
             # Just open and close to verify connection
             pass

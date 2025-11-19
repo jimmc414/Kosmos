@@ -1,2 +1,2 @@
 [console_scripts]
-kosmos = kosmos.cli.main:app
+kosmos = kosmos.cli.main:cli_entrypoint

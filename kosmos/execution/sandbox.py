@@ -221,10 +221,13 @@ class DockerSandbox:
     ) -> SandboxExecutionResult:
         """Run code in Docker container with resource limits and monitoring."""
 
+        # Convert Windows paths to POSIX-style for Docker volumes
+        posix_temp_dir = Path(temp_dir).as_posix()
+
         # Prepare volume mounts
         volumes = {
-            f"{temp_dir}/code": {'bind': '/workspace/code', 'mode': 'ro'},
-            f"{temp_dir}/output": {'bind': '/workspace/output', 'mode': 'rw'}
+            f"{posix_temp_dir}/code": {'bind': '/workspace/code', 'mode': 'ro'},
+            f"{posix_temp_dir}/output": {'bind': '/workspace/output', 'mode': 'rw'}
         }
 
         # Add data volume if exists

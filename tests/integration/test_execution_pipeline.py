@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from kosmos.models.experiment import ExperimentProtocol, ExperimentType, Variable, VariableType, ProtocolStep, ResourceRequirements, StatisticalTestSpec
+from kosmos.models.experiment import ExperimentProtocol, ExperimentType, Variable, VariableType, ProtocolStep, ResourceRequirements, StatisticalTestSpec, StatisticalTest
 from kosmos.execution.code_generator import ExperimentCodeGenerator
 from kosmos.execution.executor import CodeExecutor, execute_protocol_code
 from kosmos.execution.result_collector import ResultCollector
@@ -33,7 +33,7 @@ def ttest_protocol():
         experiment_type=ExperimentType.DATA_ANALYSIS,
         statistical_tests=[
             StatisticalTestSpec(
-                test_type="t_test",
+                test_type=StatisticalTest.T_TEST,
                 variables=["group", "score"],
                 description="Two-sample T-test comparing treatment vs control groups",
                 null_hypothesis="There is no difference in mean scores between groups"
@@ -185,7 +185,7 @@ class TestTemplatePipeline:
             experiment_type=ExperimentType.DATA_ANALYSIS,
             statistical_tests=[
                 StatisticalTestSpec(
-                    test_type="correlation",
+                test_type=StatisticalTest.CORRELATION,
                     variables=["group", "score"],
                     description="Pearson correlation analysis between variables",
                     null_hypothesis="There is no correlation between the variables"

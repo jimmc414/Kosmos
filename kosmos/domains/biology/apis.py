@@ -212,6 +212,28 @@ class KEGGClient:
 
         return data
 
+    def get_atac_peaks(self, snp_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Check for ATAC-seq peaks for a given SNP.
+
+        This is a simplified mock implementation. A real implementation would query
+        a database of ATAC-seq peaks (e.g., from ENCODE or a custom resource)
+        to check for overlap with the SNP's genomic location.
+
+        Args:
+            snp_id: SNP ID
+
+        Returns:
+            Dict with 'has_peak' and 'significance' or None
+        """
+        # Mock implementation: for demonstration, assume some SNPs are in ATAC peaks
+        # In a real scenario, this would involve a database query.
+        mock_significant_snps = ['rs7903146', 'rs12255372']
+        if snp_id in mock_significant_snps:
+            return {'has_peak': True, 'significance': 1.5e-8}
+        else:
+            return {'has_peak': False, 'significance': None}
+
     def close(self):
         """Close HTTP client."""
         self.client.close()
@@ -373,6 +395,46 @@ class GTExClient:
 
         except Exception as e:
             logger.error(f"GTEx eQTL error: {e}")
+            return None
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    def get_pqtl(self, snp_id: str, gene_id: str, tissue: str = "Whole_Blood") -> Optional[eQTLData]:
+        """
+        Get pQTL data for SNP-gene pair.
+
+        Args:
+            snp_id: Variant ID
+            gene_id: Gene ID (Ensembl format)
+            tissue: GTEx tissue name
+
+        Returns:
+            eQTLData object or None (reusing eQTLData as the structure is similar)
+        """
+        try:
+            url = f"{self.BASE_URL}/association/dynpqtl"
+            params = {
+                'variantId': snp_id,
+                'gencodeId': gene_id,
+                'tissueSiteDetailId': tissue,
+            }
+
+            response = self.client.get(url, params=params)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data and 'data' in data and len(data['data']) > 0:
+                    pqtl = data['data'][0]
+                    return eQTLData(
+                        snp_id=snp_id,
+                        gene_id=gene_id,
+                        tissue=tissue,
+                        beta=float(pqtl.get('slope', 0.0)),
+                        p_value=float(pqtl.get('pValue', 1.0)),
+                        effect_size=float(pqtl.get('effectSize', 0.0)),
+                    )
+            return None
+        except Exception as e:
+            logger.error(f"GTEx pQTL error: {e}")
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))

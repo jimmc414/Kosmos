@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from kosmos.execution.parallel import (
     ParallelExperimentExecutor,
-    ExperimentResult
+    ParallelExecutionResult
 )
 
 
@@ -35,7 +35,7 @@ class TestParallelExperimentExecutor:
 
         # Mock experiment execution
         with patch.object(executor, '_execute_experiment_task') as mock_exec:
-            mock_exec.return_value = ExperimentResult(
+            mock_exec.return_value = ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id="result_1",
@@ -54,7 +54,7 @@ class TestParallelExperimentExecutor:
         # Mock experiment execution
         def mock_execute_task(protocol_id):
             time.sleep(0.1)  # Simulate work
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -73,7 +73,7 @@ class TestParallelExperimentExecutor:
 
         def mock_execute_task(protocol_id):
             time.sleep(0.2)  # Each takes 200ms
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -97,7 +97,7 @@ class TestParallelExperimentExecutor:
         def mock_execute_task(protocol_id):
             if "failure" in protocol_id:
                 raise Exception("Experiment failed")
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -140,7 +140,7 @@ class TestParallelExperimentExecutor:
             # Variable delay to test ordering
             delay = 0.1 if "0" in protocol_id or "2" in protocol_id else 0.05
             time.sleep(delay)
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -155,12 +155,12 @@ class TestParallelExperimentExecutor:
                 assert result.protocol_id == protocol_ids[i]
 
 
-class TestExperimentResult:
-    """Test ExperimentResult data class."""
+class TestParallelExecutionResult:
+    """Test ParallelExecutionResult data class."""
 
     def test_success_result(self):
         """Test creating success result."""
-        result = ExperimentResult(
+        result = ParallelExecutionResult(
             protocol_id="test_protocol",
             success=True,
             result_id="result_123",
@@ -174,7 +174,7 @@ class TestExperimentResult:
 
     def test_failure_result(self):
         """Test creating failure result."""
-        result = ExperimentResult(
+        result = ParallelExecutionResult(
             protocol_id="test_protocol",
             success=False,
             error="Experiment execution failed"
@@ -236,7 +236,7 @@ class TestParallelExecutionWithRealExperiments:
             # Allocate and release memory
             data = [0] * 100000
             time.sleep(0.01)
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -269,7 +269,7 @@ class TestConcurrentExperimentScheduling:
 
         def mock_execute_task(protocol_id):
             time.sleep(0.1)
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -291,7 +291,7 @@ class TestConcurrentExperimentScheduling:
 
         def slow_task(protocol_id):
             time.sleep(1.0)
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -327,7 +327,7 @@ class TestResourceLimits:
         def cpu_intensive_task(protocol_id):
             # Simulate CPU work
             result = sum(i**2 for i in range(1000000))
-            return ExperimentResult(
+            return ParallelExecutionResult(
                 protocol_id=protocol_id,
                 success=True,
                 result_id=f"result_{protocol_id}",
@@ -358,14 +358,14 @@ class TestResourceLimits:
             try:
                 # Try to allocate large amount of memory
                 data = [0] * 100000000  # ~400MB
-                return ExperimentResult(
+                return ParallelExecutionResult(
                     protocol_id=protocol_id,
                     success=True,
                     result_id=f"result_{protocol_id}",
                     duration_seconds=0.1
                 )
             except MemoryError:
-                return ExperimentResult(
+                return ParallelExecutionResult(
                     protocol_id=protocol_id,
                     success=False,
                     error="Memory limit exceeded"

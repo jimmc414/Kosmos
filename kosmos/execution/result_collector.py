@@ -15,6 +15,8 @@ import re
 import numpy as np
 import pandas as pd
 
+import uuid
+from sqlalchemy.orm import Session
 from kosmos.models.result import (
     ExperimentResult, ResultStatus, ExecutionMetadata,
     StatisticalTestResult, VariableResult, ResultExport
@@ -63,6 +65,7 @@ class ResultCollector:
         self,
         protocol: ExperimentProtocol,
         execution_output: Dict[str, Any],
+        session: Optional[Session] = None,
         statistical_tests: Optional[List[Dict[str, Any]]] = None,
         variable_data: Optional[Dict[str, pd.Series]] = None,
         start_time: Optional[datetime] = None,
@@ -74,6 +77,7 @@ class ResultCollector:
         Args:
             protocol: Experiment protocol that was executed
             execution_output: Output from code execution
+            session: SQLAlchemy session for database operations
             statistical_tests: List of statistical test results
             variable_data: Dictionary of variable name -> data Series
             start_time: Execution start time
@@ -149,8 +153,8 @@ class ResultCollector:
         )
 
         # Store in database if requested
-        if self.store_in_db:
-            self._store_result(result)
+        if self.store_in_db and session:
+            self._store_result(session, result)
 
         logger.info(f"Collected result for experiment {protocol.id}: "
                    f"status={status.value}, p-value={primary_p_value}")
@@ -359,11 +363,14 @@ class ResultCollector:
             dof = test_data.get('degrees_of_freedom', test_data.get('dof'))
 
             # Additional stats
-            additional_stats = {
-                k: v for k, v in test_data.items()
-                if k not in ['test_type', 'test_name', 'statistic', 'p_value', 'effect_size',
-                            'confidence_interval', 'sample_size', 'degrees_of_freedom']
+            known_keys = {
+                'test_type', 'test_name', 'statistic', 'p_value', 'effect_size',
+                'effect_size_type', 'confidence_interval', 'confidence_level',
+                'significant_0_05', 'significant_0_01', 'significant_0_001',
+                'significance_label', 'sample_size', 'n_samples', 'degrees_of_freedom', 'dof',
+                'interpretation', 'is_primary'
             }
+            additional_stats = {k: v for k, v in test_data.items() if k not in known_keys}
 
             # Interpretation
             interpretation = test_data.get('interpretation')
@@ -431,14 +438,20 @@ class ResultCollector:
         # Support hypothesis if significant AND has meaningful effect
         return is_significant and has_meaningful_effect
 
-    def _store_result(self, result: ExperimentResult) -> None:
+    def _store_result(self, session: Session, result: ExperimentResult) -> None:
         """Store result in database."""
         try:
+            # Generate a unique ID for the result
+            result_id = f"res_{uuid.uuid4().hex[:16]}"
+            result.id = result_id
+
             # Convert to dict for database storage
             result_dict = result.to_dict()
 
             # Store using database operations
             db_result = db_ops.create_result(
+                session=session,
+                id=result_id,
                 experiment_id=result.experiment_id,
                 data=result_dict,
                 statistical_tests={test.test_name: test.model_dump() for test in result.statistical_tests},
@@ -447,9 +460,6 @@ class ResultCollector:
                 supports_hypothesis=result.supports_hypothesis,
                 interpretation=result.interpretation
             )
-
-            # Update result ID
-            result.id = db_result.id
 
             logger.info(f"Stored result in database with ID: {db_result.id}")
 
