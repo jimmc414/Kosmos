@@ -143,6 +143,11 @@ class PubMedClient(BaseLiteratureClient):
             record = Entrez.read(handle)
             handle.close()
 
+            # Validate response structure
+            if not record or "IdList" not in record:
+                self.logger.warning(f"Invalid PubMed response for query: {query}")
+                return []
+
             pmids = record["IdList"]
 
             if not pmids:
@@ -246,11 +251,20 @@ class PubMedClient(BaseLiteratureClient):
             record = Entrez.read(handle)
             handle.close()
 
-            if not record or not record[0].get("LinkSetDb"):
+            # Validate response structure
+            if not record or len(record) == 0:
+                return []
+
+            link_set_db = record[0].get("LinkSetDb")
+            if not link_set_db or len(link_set_db) == 0:
+                return []
+
+            links = link_set_db[0].get("Link", [])
+            if not links:
                 return []
 
             # Extract PMIDs of references
-            ref_pmids = [link["Id"] for link in record[0]["LinkSetDb"][0]["Link"]][:max_refs]
+            ref_pmids = [link["Id"] for link in links if "Id" in link][:max_refs]
 
             # Fetch paper details
             papers = self._fetch_paper_details(ref_pmids)
