@@ -617,8 +617,9 @@ def get_client(reset: bool = False, use_provider_system: bool = True) -> Union[C
                 logger.info(f"Initialized {config.llm_provider} provider via config")
 
             except Exception as e:
-                logger.warning(f"Failed to initialize provider from config: {e}. Falling back to ClaudeClient")
-                _default_client = ClaudeClient()
+                logger.warning(f"Failed to initialize provider from config: {e}. Falling back to AnthropicProvider")
+                from kosmos.core.providers.anthropic import AnthropicProvider
+                _default_client = AnthropicProvider()
         else:
             # Legacy mode: use ClaudeClient directly
             _default_client = ClaudeClient()

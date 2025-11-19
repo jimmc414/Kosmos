@@ -482,8 +482,8 @@ class NeurodegenerationAnalyzer:
         results_df = pd.DataFrame(results).set_index('gene_id')
 
         # Benjamini-Hochberg FDR correction
-        from scipy.stats import false_discovery_control
-        results_df['padj'] = false_discovery_control(results_df['pvalue'].values)
+        from statsmodels.stats.multitest import fdrcorrection
+        _, results_df['padj'] = fdrcorrection(results_df['pvalue'].values)
 
         return results_df
 

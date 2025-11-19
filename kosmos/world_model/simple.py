@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from kosmos.knowledge import get_knowledge_graph, KnowledgeGraph
+from kosmos.literature.base_client import PaperMetadata, PaperSource, Author
 from kosmos.world_model.interface import EntityManager, WorldModelStorage
 from kosmos.world_model.models import (
     EXPORT_FORMAT_VERSION,
@@ -125,53 +126,42 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         """Add Paper entity using existing graph methods."""
         # Extract paper-specific properties
         title = entity.properties.get("title", "Untitled")
-        authors = entity.properties.get("authors", [])
+        author_names = entity.properties.get("authors", [])
         year = entity.properties.get("year")
         doi = entity.properties.get("doi")
-        abstract = entity.properties.get("abstract")
+        abstract = entity.properties.get("abstract", "")
 
-        # Additional metadata
-        metadata = {
-            "confidence": entity.confidence,
-            "project": entity.project,
-            "created_by": entity.created_by,
-            "verified": entity.verified,
-            "created_at": entity.created_at.isoformat() if entity.created_at else None,
-            "updated_at": entity.updated_at.isoformat() if entity.updated_at else None,
-        }
+        # Convert author names to Author objects
+        authors = [Author(name=name) for name in author_names] if author_names else []
 
-        # Use existing create_paper method (handles merge logic)
-        node = self.graph.create_paper(
-            paper_id=entity.id,
+        # Create PaperMetadata object (required by KnowledgeGraph.create_paper)
+        paper = PaperMetadata(
+            id=entity.id,
+            source=PaperSource.SEMANTIC_SCHOLAR,  # Default source
             title=title,
+            abstract=abstract or "",
             authors=authors,
             year=year,
             doi=doi,
-            abstract=abstract,
-            metadata=metadata,
-            merge=merge
+            fields=[entity.project] if entity.project else []
         )
 
-        return node["paper_id"]
+        # Use existing create_paper method (handles merge logic)
+        node = self.graph.create_paper(paper=paper, merge=merge)
+
+        return node["id"]
 
     def _add_concept_entity(self, entity: Entity, merge: bool) -> str:
         """Add Concept entity using existing graph methods."""
         name = entity.properties.get("name", entity.id)
         description = entity.properties.get("description")
-
-        metadata = {
-            "confidence": entity.confidence,
-            "project": entity.project,
-            "created_by": entity.created_by,
-            "verified": entity.verified,
-            "entity_id": entity.id,
-        }
+        domain = entity.project  # Use project as domain
 
         # Use existing create_concept method
         node = self.graph.create_concept(
             name=name,
             description=description,
-            metadata=metadata,
+            domain=domain,
             merge=merge
         )
 
@@ -181,20 +171,12 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         """Add Author entity using existing graph methods."""
         name = entity.properties.get("name", entity.id)
         affiliation = entity.properties.get("affiliation")
-        email = entity.properties.get("email")
-
-        metadata = {
-            "confidence": entity.confidence,
-            "project": entity.project,
-            "created_by": entity.created_by,
-            "entity_id": entity.id,
-        }
+        h_index = entity.properties.get("h_index")
 
         node = self.graph.create_author(
             name=name,
             affiliation=affiliation,
-            email=email,
-            metadata=metadata,
+            h_index=h_index,
             merge=merge
         )
 
@@ -206,18 +188,10 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         description = entity.properties.get("description")
         category = entity.properties.get("category")
 
-        metadata = {
-            "confidence": entity.confidence,
-            "project": entity.project,
-            "created_by": entity.created_by,
-            "entity_id": entity.id,
-        }
-
         node = self.graph.create_method(
             name=name,
             description=description,
             category=category,
-            metadata=metadata,
             merge=merge
         )
 

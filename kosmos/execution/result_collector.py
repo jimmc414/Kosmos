@@ -8,6 +8,7 @@ and stores them in the database.
 import json
 import sys
 import platform
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 import logging
@@ -20,7 +21,7 @@ from kosmos.models.result import (
     StatisticalTestResult, VariableResult, ResultExport
 )
 from kosmos.models.experiment import ExperimentProtocol
-from kosmos.db import operations as db_ops
+from kosmos.db import operations as db_ops, get_session
 
 logger = logging.getLogger(__name__)
 
@@ -438,20 +439,23 @@ class ResultCollector:
             result_dict = result.to_dict()
 
             # Store using database operations
-            db_result = db_ops.create_result(
-                experiment_id=result.experiment_id,
-                data=result_dict,
-                statistical_tests={test.test_name: test.model_dump() for test in result.statistical_tests},
-                p_value=result.primary_p_value,
-                effect_size=result.primary_effect_size,
-                supports_hypothesis=result.supports_hypothesis,
-                interpretation=result.interpretation
-            )
+            with get_session() as session:
+                db_result = db_ops.create_result(
+                    session=session,
+                    id=str(uuid.uuid4()),
+                    experiment_id=result.experiment_id,
+                    data=result_dict,
+                    statistical_tests={test.test_name: test.model_dump() for test in result.statistical_tests},
+                    p_value=result.primary_p_value,
+                    effect_size=result.primary_effect_size,
+                    supports_hypothesis=result.supports_hypothesis,
+                    interpretation=result.interpretation
+                )
 
-            # Update result ID
-            result.id = db_result.id
+                # Update result ID
+                result.id = db_result.id
 
-            logger.info(f"Stored result in database with ID: {db_result.id}")
+            logger.info(f"Stored result in database with ID: {result.id}")
 
         except Exception as e:
             logger.error(f"Failed to store result in database: {e}")

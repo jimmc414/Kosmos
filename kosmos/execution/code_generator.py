@@ -62,7 +62,8 @@ class TTestComparisonCodeTemplate(CodeTemplate):
 
         # Check for t-test in statistical tests
         for test in protocol.statistical_tests:
-            if 't_test' in test.test_type.lower() or 't-test' in test.test_type.lower():
+            test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
+            if 't_test' in test_type_str.lower() or 't-test' in test_type_str.lower():
                 return True
 
         return False
@@ -136,7 +137,8 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
 
         # Check for correlation in statistical tests or protocol name
         for test in protocol.statistical_tests:
-            if 'correlation' in test.test_type.lower() or 'regression' in test.test_type.lower():
+            test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
+            if 'correlation' in test_type_str.lower() or 'regression' in test_type_str.lower():
                 return True
 
         return 'correlation' in protocol.name.lower()
@@ -151,7 +153,8 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
         # Determine correlation method
         method = 'pearson'
         for test in protocol.statistical_tests:
-            if 'spearman' in test.test_type.lower():
+            test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
+            if 'spearman' in test_type_str.lower():
                 method = 'spearman'
                 break
 

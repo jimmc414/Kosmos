@@ -211,7 +211,13 @@ class ExperimentResult(BaseModel):
     def validate_primary_test(cls, v: Optional[str], info) -> Optional[str]:
         """Validate primary test exists in statistical_tests."""
         if v is not None and 'statistical_tests' in info.data:
-            test_names = [test.test_name for test in info.data['statistical_tests']]
+            # Handle both dict and StatisticalTestResult objects during validation
+            test_names = []
+            for test in info.data['statistical_tests']:
+                if isinstance(test, dict):
+                    test_names.append(test.get('test_name'))
+                else:
+                    test_names.append(test.test_name)
             if v not in test_names:
                 raise ValueError(f"Primary test '{v}' not found in statistical_tests")
         return v
