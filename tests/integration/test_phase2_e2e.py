@@ -90,7 +90,7 @@ class TestVectorSearchWorkflow:
         with patch('chromadb.Client'):
             with patch('sentence_transformers.SentenceTransformer'):
                 # Create vector DB (mocked)
-                db = VectorDatabase(persist_directory=":memory:")
+                db = PaperVectorDB(persist_directory=":memory:")
                 db.collection = patch('chromadb.Collection').start()
 
                 # Mock embedding and add
@@ -151,7 +151,7 @@ class TestFullPipeline:
                         papers = sample_papers_list[:3]
 
                         # 2. Store in vector DB (mocked)
-                        db = VectorDatabase(persist_directory=":memory:")
+                        db = PaperVectorDB(persist_directory=":memory:")
                         db.collection = patch('chromadb.Collection').start()
 
                         with patch.object(db, 'embedding_generator'):
@@ -259,7 +259,7 @@ class TestRealServicesIntegration:
             pytest.skip("No papers found in search")
 
         # 2. Real vector DB storage
-        db = VectorDatabase(persist_directory=":memory:")
+        db = PaperVectorDB(persist_directory=":memory:")
         db.add_papers(papers)
 
         # 3. Real knowledge graph

@@ -62,7 +62,7 @@ class TTestComparisonCodeTemplate(CodeTemplate):
 
         # Check for t-test in statistical tests
         for test in protocol.statistical_tests:
-            # Use .value to get the string value from the enum
+            # Use .value to get the string value from the enum if it is an enum, else use str()
             test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
             if 't_test' in test_type_str.lower() or 't-test' in test_type_str.lower():
                 return True
@@ -138,7 +138,7 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
 
         # Check for correlation in statistical tests or protocol name
         for test in protocol.statistical_tests:
-            # Use .value to get the string value from the enum
+            # Use .value to get the string value from the enum if it is an enum, else use str()
             test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
             if 'correlation' in test_type_str.lower() or 'regression' in test_type_str.lower():
                 return True
@@ -155,7 +155,7 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
         # Determine correlation method
         method = 'pearson'
         for test in protocol.statistical_tests:
-            # Use .value to get the string value from the enum
+            # Use .value to get the string value from the enum if it is an enum, else use str()
             test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
             if 'spearman' in test_type_str.lower():
                 method = 'spearman'

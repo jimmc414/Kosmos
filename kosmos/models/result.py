@@ -96,6 +96,8 @@ class StatisticalTestResult(BaseModel):
     # Interpretation
     interpretation: Optional[str] = Field(None, description="Human-readable interpretation")
 
+    is_primary: bool = Field(False, description="Whether this is the primary test")
+
 
 class VariableResult(BaseModel):
     """Result data for a specific variable."""
