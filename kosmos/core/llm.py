@@ -317,6 +317,10 @@ class ClaudeClient:
                 if hasattr(response.usage, 'output_tokens'):
                     self.total_output_tokens += response.usage.output_tokens
 
+            # Validate response has content
+            if not response.content or len(response.content) == 0:
+                raise ValueError("Claude API returned empty response content")
+
             # Extract text
             text = response.content[0].text
 
@@ -388,6 +392,10 @@ class ClaudeClient:
                     self.total_input_tokens += response.usage.input_tokens
                 if hasattr(response.usage, 'output_tokens'):
                     self.total_output_tokens += response.usage.output_tokens
+
+            # Validate response has content
+            if not response.content or len(response.content) == 0:
+                raise ValueError("Claude API returned empty response content")
 
             return response.content[0].text
 

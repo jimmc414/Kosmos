@@ -67,6 +67,11 @@ class UnifiedLiteratureSearch:
 
         logger.info(f"Initialized unified search with {len(self.clients)} sources")
 
+    @property
+    def arxiv_client(self):
+        """Get the arXiv client instance."""
+        return self.clients.get(PaperSource.ARXIV)
+
     def search(
         self,
         query: str,
