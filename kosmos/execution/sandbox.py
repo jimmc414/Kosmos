@@ -283,14 +283,14 @@ class DockerSandbox:
             try:
                 exit_status = container.wait(timeout=self.timeout)
                 timeout_occurred = False
-            except Exception as e:
+            except (docker.errors.APIError, ConnectionError, TimeoutError) as e:
                 logger.warning(f"Container timeout after {self.timeout}s: {e}")
                 timeout_occurred = True
 
                 # Try graceful shutdown
                 try:
                     container.stop(timeout=5)
-                except:
+                except docker.errors.APIError:
                     container.kill()
 
                 exit_status = {'StatusCode': -1}

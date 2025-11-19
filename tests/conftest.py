@@ -96,6 +96,7 @@ def sample_paper_metadata(sample_papers_data: List[Dict]) -> PaperMetadata:
     """Return a single sample PaperMetadata object."""
     paper_dict = sample_papers_data[0]  # "Attention Is All You Need"
     return PaperMetadata(
+        id="paper_1",
         title=paper_dict["title"],
         authors=paper_dict["authors"],
         abstract=paper_dict["abstract"],
@@ -115,9 +116,10 @@ def sample_paper_metadata(sample_papers_data: List[Dict]) -> PaperMetadata:
 def sample_papers_list(sample_papers_data: List[Dict]) -> List[PaperMetadata]:
     """Return a list of sample PaperMetadata objects."""
     papers = []
-    for paper_dict in sample_papers_data:
+    for i, paper_dict in enumerate(sample_papers_data):
         papers.append(
             PaperMetadata(
+                id=f"paper_{i}",
                 title=paper_dict["title"],
                 authors=paper_dict["authors"],
                 abstract=paper_dict["abstract"],
