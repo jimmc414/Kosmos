@@ -345,15 +345,15 @@ class TestConvergenceScenarios:
             Hypothesis(
                 id="hyp_001",
                 research_question=simple_research_question,
-                statement="Test 1",
-                rationale="Rationale",
+                statement="Testing hypothesis statement 1",
+                rationale="Rationale must be at least twenty characters long for validity",
                 domain="neuroscience",
             ),
             Hypothesis(
                 id="hyp_002",
                 research_question=simple_research_question,
-                statement="Test 2",
-                rationale="Rationale",
+                statement="Testing hypothesis statement 2",
+                rationale="Rationale must be at least twenty characters long for validity",
                 domain="neuroscience",
             ),
         ]
@@ -389,7 +389,7 @@ class TestConvergenceScenarios:
                 id=f"hyp_{i}",
                 research_question=simple_research_question,
                 statement=f"Hypothesis {i}",
-                rationale="Rationale",
+                rationale="Rationale must be at least twenty characters long for validity",
                 domain="neuroscience",
                 novelty_score=0.8 - (i * 0.15),  # Declining: 0.8, 0.65, 0.5, 0.35, 0.2, 0.05
             )
@@ -473,7 +473,7 @@ class TestReportGeneration:
                 id=f"hyp_{i}",
                 research_question=simple_research_question,
                 statement=f"Hypothesis {i}",
-                rationale="Rationale",
+                rationale="Rationale must be at least twenty characters long for validity",
                 domain="neuroscience",
             )
             for i in range(3)
@@ -501,10 +501,10 @@ class TestReportGeneration:
         )
 
         report = detector.generate_convergence_report(
-            decision,
             director.research_plan,
             hypotheses,
             results,
+            stopping_reason=decision.reason,
         )
 
         assert report is not None
@@ -545,10 +545,10 @@ class TestReportGeneration:
         )
 
         report = detector.generate_convergence_report(
-            decision,
             director.research_plan,
             [],
             [],
+            stopping_reason=decision.reason,
         )
 
         markdown = report.to_markdown()
@@ -584,10 +584,10 @@ class TestReportGeneration:
         )
 
         report = detector.generate_convergence_report(
-            decision,
             director.research_plan,
             [],
             [],
+            stopping_reason=decision.reason,
         )
 
         markdown = report.to_markdown()
@@ -630,10 +630,10 @@ class TestReportGeneration:
         )
 
         report = detector.generate_convergence_report(
-            decision,
             director.research_plan,
             [],
             [],
+            stopping_reason=decision.reason,
         )
 
         assert report.final_metrics is not None
@@ -667,10 +667,10 @@ class TestReportGeneration:
         )
 
         report = detector.generate_convergence_report(
-            decision,
             director.research_plan,
             [],
             [],
+            stopping_reason=decision.reason,
         )
 
         assert len(report.recommended_next_steps) > 0

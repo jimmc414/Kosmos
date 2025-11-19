@@ -10,7 +10,8 @@ from unittest.mock import MagicMock, patch
 
 from kosmos.execution.parallel import (
     ParallelExperimentExecutor,
-    ParallelExecutionResult
+    ParallelExecutionResult,
+    ExperimentTask
 )
 
 

@@ -153,6 +153,8 @@ class SafetyGuardrails:
         # Cap requested limits to defaults
         # Use explicit None checks instead of truthiness to handle 0 values correctly
         def get_value_or_inf(val):
+            # Treat 0 as a valid limit (meaning no resources allowed)
+            # Only treat None as unlimited
             return val if val is not None else float('inf')
 
         enforced = ResourceLimit(

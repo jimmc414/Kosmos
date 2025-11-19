@@ -217,6 +217,19 @@ class ParallelExperimentExecutor:
 
         return results
 
+    def shutdown(self, wait: bool = True) -> None:
+        """
+        Shutdown the executor.
+
+        Args:
+            wait: If True, wait for pending tasks to complete
+        """
+        logger.info("Shutting down parallel executor")
+        # ProcessPoolExecutor is managed via context manager in execute_batch,
+        # so we don't have a persistent pool to shutdown.
+        # This method is provided for compatibility with tests and standard Executor interface.
+        pass
+
     def execute_batch_async(
         self,
         tasks: List[ExperimentTask],

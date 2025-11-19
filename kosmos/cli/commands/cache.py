@@ -261,7 +261,13 @@ def clear_specific_cache(cache_manager, cache_type: str):
     with console.status(f"[yellow]Clearing {cache_type} cache...[/yellow]"):
         from kosmos.core.cache_manager import CacheType
 
-        cache_type_enum = CacheType[cache_type.upper()]
+        # Handle both uppercase and lowercase cache types
+        try:
+            cache_type_enum = CacheType[cache_type.upper()]
+        except KeyError:
+            # Try the value directly if uppercase doesn't work
+            cache_type_enum = CacheType(cache_type.lower())
+
         cache_manager.clear(cache_type_enum)
 
     print_success(f"{cache_type.title()} cache cleared successfully", title="Cache Cleared")

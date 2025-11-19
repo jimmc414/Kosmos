@@ -102,9 +102,10 @@ class PaperVectorDB:
         # Initialize embedder
         self.embedder = get_embedder()
 
+        count = self.collection.count() if self.collection is not None else 0
         logger.info(
             f"Initialized PaperVectorDB (collection={collection_name}, "
-            f"persist_dir={persist_directory}, count={self.collection.count()})"
+            f"persist_dir={persist_directory}, count={count})"
         )
 
     def add_paper(
@@ -266,6 +267,11 @@ class PaperVectorDB:
             similar_papers = db.search_by_paper(paper, top_k=5)
             ```
         """
+        # Check if collection is available
+        if self.collection is None:
+            logger.warning("Collection not available. Cannot find similar papers.")
+            return []
+
         # Get paper embedding
         paper_embedding = self.embedder.embed_paper(paper)
 
@@ -311,6 +317,10 @@ class PaperVectorDB:
         Returns:
             Paper data or None if not found
         """
+        if self.collection is None:
+            logger.warning("Collection not available. Cannot get paper.")
+            return None
+
         try:
             result = self.collection.get(ids=[paper_id])
 
@@ -334,6 +344,10 @@ class PaperVectorDB:
         Args:
             paper_id: Paper identifier
         """
+        if self.collection is None:
+            logger.warning("Collection not available. Cannot delete paper.")
+            return
+
         try:
             self.collection.delete(ids=[paper_id])
             logger.info(f"Deleted paper {paper_id}")
@@ -347,6 +361,9 @@ class PaperVectorDB:
         Returns:
             Paper count
         """
+        if self.collection is None:
+            logger.warning("Collection not available. Returning 0.")
+            return 0
         return self.collection.count()
 
     def get_stats(self) -> Dict[str, Any]:
