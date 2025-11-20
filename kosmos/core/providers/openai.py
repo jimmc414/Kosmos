@@ -92,18 +92,26 @@ class OpenAIProvider(LLMProvider):
                 "openai package is required. Install with: pip install openai"
             )
 
-        # Extract configuration
-        self.api_key = config.api_key or os.environ.get('OPENAI_API_KEY')
+        # Extract configuration (handle both dict and Pydantic model)
+        def get_config_value(key, default=None):
+            """Get value from config (dict or Pydantic model)."""
+            if isinstance(config, dict):
+                return config.get(key, default)
+            else:
+                return getattr(config, key, default)
+
+        self.api_key = get_config_value('api_key') or os.environ.get('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError(
                 "OPENAI_API_KEY not provided in config or environment."
             )
 
-        self.model = config.model or 'gpt-4-turbo'
-        self.max_tokens = config.max_tokens or 4096
-        self.temperature = config.temperature if config.temperature is not None else 0.7
-        self.base_url = config.base_url or os.environ.get('OPENAI_BASE_URL')
-        self.organization = config.organization or os.environ.get('OPENAI_ORGANIZATION')
+        self.model = get_config_value('model') or 'gpt-4-turbo'
+        self.max_tokens = get_config_value('max_tokens') or 4096
+        temperature = get_config_value('temperature')
+        self.temperature = temperature if temperature is not None else 0.7
+        self.base_url = get_config_value('base_url') or os.environ.get('OPENAI_BASE_URL')
+        self.organization = get_config_value('organization') or os.environ.get('OPENAI_ORGANIZATION')
 
         # Detect provider type from base_url
         if self.base_url:

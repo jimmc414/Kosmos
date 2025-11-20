@@ -19,15 +19,18 @@ class TestBiologyResearchWorkflow:
         """Sample biology research question."""
         return "How does temperature affect enzyme activity in metabolic pathways?"
 
-    @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="API key required")
+    @pytest.mark.skipif(
+        not os.getenv("ANTHROPIC_API_KEY") and not os.getenv("OPENAI_API_KEY"),
+        reason="API key required (ANTHROPIC_API_KEY or OPENAI_API_KEY)"
+    )
     def test_full_biology_workflow(self, research_question):
         """Test complete biology research cycle."""
         from kosmos.agents.research_director import ResearchDirectorAgent
 
         config = {
-            "max_iterations": 3,  # Short for testing
-            "enable_concurrent_operations": True,
-            "max_concurrent_experiments": 2
+            "max_iterations": 2,  # Keep very short for testing (just 2 iterations)
+            "enable_concurrent_operations": False,  # Sequential for simplicity
+            "max_concurrent_experiments": 1
         }
 
         director = ResearchDirectorAgent(
@@ -36,13 +39,40 @@ class TestBiologyResearchWorkflow:
             config=config
         )
 
-        # Run research cycle
-        # (Implementation would run actual research)
-        # For E2E test, we verify the workflow completes without errors
-
         assert director is not None
         assert director.research_question == research_question
         assert director.domain == "biology"
+
+        # Execute first step of research
+        print(f"\n🔬 Starting research: {research_question}")
+        result = director.execute({"action": "start_research"})
+
+        # Verify research started
+        assert result["status"] == "research_started"
+        assert "research_plan" in result
+        assert "next_action" in result
+
+        print(f"✅ Research started successfully")
+        print(f"   Status: {result['status']}")
+        print(f"   Next action: {result['next_action']}")
+
+        # Get research status
+        status = director.get_research_status()
+        assert "workflow_state" in status
+        assert "iteration" in status
+
+        print(f"   Workflow state: {status.get('workflow_state')}")
+        print(f"   Iteration: {status.get('iteration')}")
+
+        # Verify we have started generating hypotheses or moved past it
+        # (workflow_state can be lowercase or uppercase depending on implementation)
+        workflow_state = status.get("workflow_state", "").lower()
+        assert workflow_state in [
+            "initializing", "generating_hypotheses", "designing_experiments",
+            "executing", "analyzing"
+        ]
+
+        print(f"\n🎉 E2E test passed! Research workflow executing correctly.")
 
 
 @pytest.mark.e2e

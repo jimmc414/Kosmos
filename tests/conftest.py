@@ -12,8 +12,22 @@ from typing import Dict, List
 from unittest.mock import MagicMock, Mock
 
 import pytest
+from dotenv import load_dotenv
 
 from kosmos.literature.base_client import PaperMetadata
+
+
+# ============================================================================
+# Load Environment at Module Import Time (before pytest collection)
+# ============================================================================
+
+# Load .env file immediately when conftest is imported
+_env_path = Path(__file__).parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path, override=True)
+    print(f"✅ Loaded environment from {_env_path}")
+else:
+    print(f"⚠️  No .env file found at {_env_path}")
 
 
 # ============================================================================

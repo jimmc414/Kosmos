@@ -29,7 +29,11 @@
       "Bash(for branch in claude/fix-kosmos-bugs-01APu7A7DoqwfVmbRdQyx69B claude/fix-pydantic-v2-config-0118LoWzrgTDnhHBnXUUZLKf claude/review-kosmos-bugs-01Rxt7yxrTjEcpSkdKEoT4nP)",
       "Bash(mkdir:*)",
       "Bash(mv:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(gh issue close:*)",
+      "Bash(gh issue list:*)"
     ],
     "deny": [],
     "ask": []
