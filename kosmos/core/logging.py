@@ -56,6 +56,14 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
 
+        # Add workflow context fields
+        if hasattr(record, "workflow_id"):
+            log_data["workflow_id"] = record.workflow_id
+        if hasattr(record, "cycle"):
+            log_data["cycle"] = record.cycle
+        if hasattr(record, "task_id"):
+            log_data["task_id"] = record.task_id
+
         # Add extra fields
         if hasattr(record, "extra"):
             log_data["extra"] = record.extra

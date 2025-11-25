@@ -119,6 +119,38 @@ dev = [
     "pre-commit>=3.6.0",
 ]
 
+test = [
+    # Core test framework
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.2.0",
+
+    # Mocking
+    "responses>=0.24.0",
+    "freezegun>=1.4.0",
+]
+
+science = [
+    # Bioinformatics (heavy dependencies)
+    "scanpy>=1.9.0",
+    "anndata>=0.9.0",
+]
+
+execution = [
+    # Docker-based sandboxed execution
+    "docker>=7.0.0",
+]
+
+monitoring = [
+    # Prometheus metrics
+    "prometheus-client>=0.19.0",
+]
+
+all = [
+    "kosmos-ai-scientist[dev,science,execution,monitoring]",
+]
+
 router = [
     # Optional: Use anthropic_router for CLI routing
     # Users can install this to enable Claude Code CLI support

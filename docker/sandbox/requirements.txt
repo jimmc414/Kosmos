@@ -1,34 +1,73 @@
 # Kosmos Sandbox Environment Requirements
 # Python 3.11+ compatible versions
+# Production-ready scientific computing environment
 
-# Core scientific computing
+# =============================================================================
+# Core Scientific Computing
+# =============================================================================
 numpy==1.26.4
 pandas==2.2.1
 scipy==1.12.0
 
-# Machine learning
+# =============================================================================
+# Machine Learning
+# =============================================================================
 scikit-learn==1.4.1.post1
 
-# Statistical computing
+# =============================================================================
+# Statistical Computing
+# =============================================================================
 statsmodels==0.14.1
 
+# =============================================================================
 # Visualization
+# =============================================================================
 matplotlib==3.8.3
 seaborn==0.13.2
+plotly>=5.18.0
 
-# Data validation
+# =============================================================================
+# Data Validation
+# =============================================================================
 pydantic==2.6.3
 
+# =============================================================================
 # Utilities
+# =============================================================================
 python-dateutil==2.9.0
 pytz==2024.1
 
-# Optional: Additional scientific libraries
+# =============================================================================
+# Scientific Libraries
+# =============================================================================
 sympy==1.12
+networkx>=3.2.0
 
+# =============================================================================
 # Advanced Analytics (REQ-DAA-CAP-005, REQ-DAA-CAP-008, REQ-DAA-SUM-004)
+# =============================================================================
 shap>=0.44.0          # Feature importance analysis
 gseapy>=1.0.0         # Pathway enrichment analysis
 pwlf>=2.2.0           # Segmented regression
+
+# =============================================================================
+# Jupyter Support
+# =============================================================================
 nbformat>=5.9.0       # Jupyter notebook support
 nbconvert>=7.11.0     # Jupyter notebook conversion
+jupyter_client>=8.0.0 # Kernel communication
+
+# =============================================================================
+# Data Formats
+# =============================================================================
+openpyxl>=3.1.0       # Excel files
+xlrd>=2.0.0           # Legacy Excel files
+pyarrow>=14.0.0       # Parquet/Arrow
+h5py>=3.10.0          # HDF5 files
+
+# =============================================================================
+# Bioinformatics (optional - install separately if needed for heavy deps)
+# =============================================================================
+biopython>=1.81       # Biological computation
+# scanpy>=1.9.0       # Single-cell analysis (heavy dependency)
+# anndata>=0.9.0      # Annotated data (heavy dependency)

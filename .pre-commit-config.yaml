@@ -1,0 +1,47 @@
+# Kosmos Pre-commit Configuration
+# Install: pip install pre-commit && pre-commit install
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: check-toml
+
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        args: ['--line-length=100']
+        exclude: 'kosmos-figures/'
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.4
+    hooks:
+      - id: ruff
+        args: ['--fix', '--exit-non-zero-on-fix']
+        exclude: 'kosmos-figures/'
+
+  - repo: local
+    hooks:
+      - id: verify-imports
+        name: Verify Core Imports
+        entry: python -c "from kosmos.compression import ContextCompressor; from kosmos.orchestration import ResearchOrchestrator; from kosmos.validation import ScholarEvalValidator; print('Imports OK')"
+        language: python
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: smoke-test
+        name: Run Smoke Tests
+        entry: python scripts/smoke_test.py
+        language: python
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true

@@ -1,0 +1,27 @@
+# Kosmos Test Requirements
+# Install with: pip install -r requirements-test.txt
+
+# Core test framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.2.0
+pytest-mock>=3.12.0
+
+# Mocking
+responses>=0.24.0
+freezegun>=1.4.0
+faker>=22.0.0
+
+# Code quality (for pre-commit)
+black>=23.0.0
+ruff>=0.1.0
+
+# Docker SDK (for execution tests)
+docker>=7.0.0
+
+# Prometheus metrics
+prometheus-client>=0.19.0
+
+# Install the package itself in development mode
+-e .
