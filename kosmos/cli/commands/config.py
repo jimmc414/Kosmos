@@ -125,20 +125,34 @@ def display_config():
         config = get_config()
 
         # Claude configuration
-        claude_table = create_table(
-            title="Claude API Configuration",
-            columns=["Setting", "Value"],
-            show_lines=True,
-        )
+        if config.claude:
+            claude_table = create_table(
+                title="Claude API Configuration",
+                columns=["Setting", "Value"],
+                show_lines=True,
+            )
 
-        claude_table.add_row("Model", config.claude.model)
-        claude_table.add_row("API Mode", "CLI" if config.claude.is_cli_mode else "API")
-        claude_table.add_row("Max Tokens", str(config.claude.max_tokens))
-        claude_table.add_row("Temperature", str(config.claude.temperature))
-        claude_table.add_row("Cache Enabled", str(config.claude.enable_cache))
+            claude_table.add_row("Model", config.claude.model)
+            claude_table.add_row("API Mode", "CLI" if config.claude.is_cli_mode else "API")
+            claude_table.add_row("Max Tokens", str(config.claude.max_tokens))
+            claude_table.add_row("Temperature", str(config.claude.temperature))
+            claude_table.add_row("Cache Enabled", str(config.claude.enable_cache))
 
-        console.print(claude_table)
-        console.print()
+            console.print(claude_table)
+            console.print()
+        elif config.openai:
+            openai_table = create_table(
+                title="OpenAI API Configuration",
+                columns=["Setting", "Value"],
+                show_lines=True,
+            )
+
+            openai_table.add_row("Model", config.openai.model)
+            openai_table.add_row("Max Tokens", str(config.openai.max_tokens))
+            openai_table.add_row("Temperature", str(config.openai.temperature))
+
+            console.print(openai_table)
+            console.print()
 
         # Research configuration
         research_table = create_table(
@@ -196,20 +210,36 @@ def validate_config():
         # Validation checks
         checks = []
 
-        # Check API key
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        checks.append((
-            "Anthropic API Key",
-            "Configured" if api_key else "Missing",
-            bool(api_key)
-        ))
+        # Check API key based on provider
+        llm_provider = os.getenv("LLM_PROVIDER", "anthropic")
+        if llm_provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            checks.append((
+                "OpenAI API Key",
+                "Configured" if api_key else "Missing",
+                bool(api_key)
+            ))
+        else:
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            checks.append((
+                "Anthropic API Key",
+                "Configured" if api_key else "Missing",
+                bool(api_key)
+            ))
 
         # Check model
-        checks.append((
-            "Claude Model",
-            config.claude.model,
-            config.claude.model in ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]
-        ))
+        if config.claude:
+            checks.append((
+                "Claude Model",
+                config.claude.model,
+                config.claude.model in ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]
+            ))
+        elif config.openai:
+            checks.append((
+                "OpenAI Model",
+                config.openai.model,
+                True  # Any valid model is acceptable
+            ))
 
         # Check domains
         valid_domains = {"biology", "neuroscience", "materials", "physics", "chemistry", "general"}

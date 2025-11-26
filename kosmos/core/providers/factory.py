@@ -105,7 +105,7 @@ def get_provider_from_config(kosmos_config) -> LLMProvider:
 
     # Get provider-specific config
     if provider_name.lower() == 'anthropic':
-        if hasattr(kosmos_config, 'claude'):
+        if hasattr(kosmos_config, 'claude') and kosmos_config.claude:
             # Backward compatibility: old config uses 'claude' field
             claude_config = kosmos_config.claude
             provider_config = {

@@ -122,8 +122,13 @@ class ConceptExtractor:
         """
         config = get_config()
 
-        # API setup
-        self.api_key = api_key or config.claude.api_key
+        # API setup - requires Anthropic API key
+        self.api_key = api_key or (config.claude.api_key if config.claude else None)
+        if not self.api_key:
+            raise ValueError(
+                "Anthropic API key is required for ConceptExtractor. "
+                "Either pass api_key parameter or set ANTHROPIC_API_KEY environment variable."
+            )
         self.client = anthropic.Anthropic(api_key=self.api_key)
         self.model = model
         self.max_tokens = max_tokens

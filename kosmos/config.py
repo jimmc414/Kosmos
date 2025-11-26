@@ -694,6 +694,14 @@ def _optional_anthropic_config() -> Optional[AnthropicConfig]:
     return None
 
 
+def _optional_claude_config() -> Optional[ClaudeConfig]:
+    """Create ClaudeConfig only if ANTHROPIC_API_KEY is set."""
+    import os
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return ClaudeConfig()
+    return None
+
+
 class KosmosConfig(BaseSettings):
     """
     Master configuration for Kosmos AI Scientist.
@@ -732,7 +740,7 @@ class KosmosConfig(BaseSettings):
     )
 
     # Component configurations
-    claude: ClaudeConfig = Field(default_factory=ClaudeConfig)  # Backward compatibility
+    claude: Optional[ClaudeConfig] = Field(default_factory=_optional_claude_config)  # Backward compatibility
     anthropic: Optional[AnthropicConfig] = Field(default_factory=_optional_anthropic_config)  # New name (optional, defaults to claude)
     openai: Optional[OpenAIConfig] = Field(default_factory=_optional_openai_config)  # OpenAI provider config
     research: ResearchConfig = Field(default_factory=ResearchConfig)
@@ -765,7 +773,7 @@ class KosmosConfig(BaseSettings):
                     "Please set OPENAI_API_KEY in your environment or .env file."
                 )
         elif self.llm_provider == "anthropic":
-            if not self.claude.api_key:
+            if not self.claude or not self.claude.api_key:
                 raise ValueError(
                     "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic. "
                     "Please set ANTHROPIC_API_KEY in your environment or .env file."

@@ -176,9 +176,13 @@ def info():
             show_lines=True,
         )
 
-        config_table.add_row("Claude Model", config.claude.model)
+        if config.claude:
+            config_table.add_row("Claude Model", config.claude.model)
+        elif config.openai:
+            config_table.add_row("OpenAI Model", config.openai.model)
         config_table.add_row("Max Iterations", str(config.research.max_iterations))
-        config_table.add_row("API Mode", "CLI" if config.claude.is_cli_mode else "API")
+        if config.claude:
+            config_table.add_row("API Mode", "CLI" if config.claude.is_cli_mode else "API")
         config_table.add_row(
             "Domains",
             ", ".join(config.research.enabled_domains) if config.research.enabled_domains else "All"
@@ -253,9 +257,14 @@ def doctor():
         except ImportError:
             checks.append((f"Package: {package}", "Missing", False))
 
-    # Check API key
-    api_key_ok = bool(os.getenv("ANTHROPIC_API_KEY"))
-    checks.append(("Anthropic API Key", "Configured" if api_key_ok else "Not set", api_key_ok))
+    # Check API key based on provider
+    llm_provider = os.getenv("LLM_PROVIDER", "anthropic")
+    if llm_provider == "openai":
+        api_key_ok = bool(os.getenv("OPENAI_API_KEY"))
+        checks.append(("OpenAI API Key", "Configured" if api_key_ok else "Not set", api_key_ok))
+    else:
+        api_key_ok = bool(os.getenv("ANTHROPIC_API_KEY"))
+        checks.append(("Anthropic API Key", "Configured" if api_key_ok else "Not set", api_key_ok))
 
     # Check cache directory
     from kosmos.cli.utils import get_cache_dir
@@ -320,7 +329,10 @@ def doctor():
         console.print()
         console.print("[warning]To fix database issues, try:[/warning]")
         console.print("  1. Ensure .env file exists (will be auto-created)")
-        console.print("  2. Set ANTHROPIC_API_KEY environment variable")
+        if llm_provider == "openai":
+            console.print("  2. Set OPENAI_API_KEY environment variable")
+        else:
+            console.print("  2. Set ANTHROPIC_API_KEY environment variable")
         console.print("  3. Run: [code]alembic upgrade head[/code]")
         console.print("  4. Or reinstall: [code]make install[/code]")
         console.print()

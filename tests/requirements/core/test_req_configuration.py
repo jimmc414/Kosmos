@@ -132,7 +132,10 @@ class TestREQ_CFG_001_LoadConfiguration:
         reset_config()
 
         # Without env var, should use default
-        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'sk-ant-test'}, clear=True):
+        with patch.dict(os.environ, {
+            'ANTHROPIC_API_KEY': 'sk-ant-test',
+            'LLM_PROVIDER': 'anthropic'  # Explicit to avoid .env file conflicts
+        }, clear=True):
             config1 = get_config(reload=True)
             default_level = config1.logging.level  # Default is INFO
 
@@ -141,8 +144,9 @@ class TestREQ_CFG_001_LoadConfiguration:
         # With env var, should override default
         with patch.dict(os.environ, {
             'ANTHROPIC_API_KEY': 'sk-ant-test',
+            'LLM_PROVIDER': 'anthropic',  # Explicit to avoid .env file conflicts
             'LOG_LEVEL': 'ERROR'
-        }):
+        }, clear=True):
             config2 = get_config(reload=True)
             assert config2.logging.level == 'ERROR'
 
@@ -192,6 +196,45 @@ class TestREQ_CFG_002_ValidateRequiredParameters:
         with patch.dict(os.environ, {'LLM_PROVIDER': 'openai'}, clear=True):
             with pytest.raises((ValidationError, ValueError)):
                 config = get_config(reload=True)
+
+        reset_config()
+
+    def test_openai_provider_does_not_require_anthropic_key(self):
+        """Verify OpenAI provider works without ANTHROPIC_API_KEY (Issue #22)."""
+        from kosmos.config import get_config, reset_config
+
+        reset_config()
+
+        # OpenAI provider should work without ANTHROPIC_API_KEY
+        with patch.dict(os.environ, {
+            'LLM_PROVIDER': 'openai',
+            'OPENAI_API_KEY': 'sk-test-key',
+            'OPENAI_MODEL': 'gpt-4'
+        }, clear=True):
+            config = get_config(reload=True)
+            assert config.llm_provider == "openai"
+            assert config.openai is not None
+            assert config.openai.api_key == 'sk-test-key'
+            assert config.claude is None  # Should be None without ANTHROPIC_API_KEY
+
+        reset_config()
+
+    def test_anthropic_provider_does_not_require_openai_key(self):
+        """Verify Anthropic provider works without OPENAI_API_KEY."""
+        from kosmos.config import get_config, reset_config
+
+        reset_config()
+
+        # Anthropic provider should work without OPENAI_API_KEY
+        with patch.dict(os.environ, {
+            'LLM_PROVIDER': 'anthropic',
+            'ANTHROPIC_API_KEY': 'sk-ant-test-key'
+        }, clear=True):
+            config = get_config(reload=True)
+            assert config.llm_provider == "anthropic"
+            assert config.claude is not None
+            assert config.claude.api_key == 'sk-ant-test-key'
+            assert config.openai is None  # Should be None without OPENAI_API_KEY
 
         reset_config()
 
@@ -557,7 +600,7 @@ class TestREQ_CFG_005_NoExecutionWithInvalidConfig:
         with patch.dict(os.environ, {
             'LLM_PROVIDER': 'openai',
             'ANTHROPIC_API_KEY': 'sk-ant-test'  # Wrong provider key
-        }):
+        }, clear=True):
             with pytest.raises((ValidationError, ValueError)):
                 config = get_config(reload=True)
 
