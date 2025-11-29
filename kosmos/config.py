@@ -374,6 +374,49 @@ class LoggingConfig(BaseSettings):
         alias="DEBUG_MODE"
     )
 
+    # Enhanced debug configuration
+    debug_level: Literal[0, 1, 2, 3] = Field(
+        default=0,
+        description="Debug verbosity: 0=off, 1=critical path, 2=full trace, 3=data dumps",
+        alias="DEBUG_LEVEL"
+    )
+
+    debug_modules: Annotated[Optional[List[str]], BeforeValidator(parse_comma_separated)] = Field(
+        default=None,
+        description="Modules to debug (None=all when debug_mode=True)",
+        alias="DEBUG_MODULES"
+    )
+
+    log_llm_calls: bool = Field(
+        default=False,
+        description="Log LLM request/response summaries",
+        alias="LOG_LLM_CALLS"
+    )
+
+    log_agent_messages: bool = Field(
+        default=False,
+        description="Log inter-agent message routing",
+        alias="LOG_AGENT_MESSAGES"
+    )
+
+    log_workflow_transitions: bool = Field(
+        default=False,
+        description="Log state machine transitions with timing",
+        alias="LOG_WORKFLOW_TRANSITIONS"
+    )
+
+    stage_tracking_enabled: bool = Field(
+        default=False,
+        description="Enable real-time stage tracking output",
+        alias="STAGE_TRACKING_ENABLED"
+    )
+
+    stage_tracking_file: str = Field(
+        default="logs/stages.jsonl",
+        description="Stage tracking output file",
+        alias="STAGE_TRACKING_FILE"
+    )
+
     model_config = SettingsConfigDict(populate_by_name=True)
 
 

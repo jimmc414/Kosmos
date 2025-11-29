@@ -46,21 +46,49 @@ app = typer.Typer(
 
 
 # Configure logging
-def setup_logging(verbose: bool = False, debug: bool = False):
-    """Configure logging for CLI."""
+def setup_logging(verbose: bool = False, debug: bool = False, trace: bool = False, debug_level: int = 0):
+    """Configure logging for CLI.
+
+    Args:
+        verbose: Enable verbose (INFO level) output
+        debug: Enable debug mode (DEBUG level)
+        trace: Enable trace-level logging (maximum verbosity, enables all debug flags)
+        debug_level: Debug verbosity level (0-3)
+    """
     from kosmos.cli.utils import get_log_dir
 
     log_dir = get_log_dir()
     log_file = log_dir / "kosmos.log"
 
-    level = logging.DEBUG if debug else (logging.INFO if verbose else logging.WARNING)
+    # Determine log level
+    if trace or debug_level >= 2:
+        level = logging.DEBUG
+    elif debug or debug_level >= 1:
+        level = logging.DEBUG
+    elif verbose:
+        level = logging.INFO
+    else:
+        level = logging.WARNING
+
+    # If trace is enabled, also enable all debug toggles in config
+    if trace:
+        try:
+            from kosmos.config import get_config
+            config = get_config()
+            config.logging.log_llm_calls = True
+            config.logging.log_agent_messages = True
+            config.logging.log_workflow_transitions = True
+            config.logging.stage_tracking_enabled = True
+            config.logging.debug_level = 3
+        except Exception:
+            pass  # Config may not be available yet
 
     logging.basicConfig(
         level=level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler(log_file),
-            logging.StreamHandler() if debug else logging.NullHandler(),
+            logging.StreamHandler() if (debug or trace or debug_level > 0) else logging.NullHandler(),
         ]
     )
 
@@ -71,6 +99,9 @@ def main(
     ctx: typer.Context,
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug mode"),
+    trace: bool = typer.Option(False, "--trace", help="Enable trace-level logging (maximum verbosity)"),
+    debug_level: int = typer.Option(0, "--debug-level", "-dl", help="Debug level 0-3 (0=off, 1=critical path, 2=full trace, 3=data dumps)"),
+    debug_modules: Optional[str] = typer.Option(None, "--debug-modules", help="Comma-separated modules to debug"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress non-essential output"),
 ):
     """
@@ -92,10 +123,22 @@ def main(
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     ctx.obj["debug"] = debug
+    ctx.obj["trace"] = trace
+    ctx.obj["debug_level"] = debug_level
+    ctx.obj["debug_modules"] = debug_modules
     ctx.obj["quiet"] = quiet
 
     # Configure logging
-    setup_logging(verbose=verbose, debug=debug)
+    setup_logging(verbose=verbose, debug=debug, trace=trace, debug_level=debug_level)
+
+    # Set debug_modules in config if provided
+    if debug_modules:
+        try:
+            from kosmos.config import get_config
+            config = get_config()
+            config.logging.debug_modules = [m.strip() for m in debug_modules.split(",")]
+        except Exception:
+            pass  # Config may not be available yet
 
     # Initialize database
     try:

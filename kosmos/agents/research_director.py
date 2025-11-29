@@ -24,6 +24,7 @@ from kosmos.core.workflow import (
     NextAction
 )
 from kosmos.core.llm import get_client
+from kosmos.core.stage_tracker import get_stage_tracker
 from kosmos.models.hypothesis import Hypothesis, HypothesisStatus
 from kosmos.world_model import get_world_model, Entity, Relationship
 from kosmos.db import get_session
@@ -1215,7 +1216,17 @@ Provide a structured, actionable plan in 2-3 paragraphs.
         """
         current_state = self.workflow.current_state
 
-        logger.debug(f"Deciding next action (state: {current_state})")
+        # Enhanced debug logging
+        logger.debug(
+            "[DECISION] decide_next_action: state=%s, iteration=%d/%d, "
+            "hypotheses=%d, untested=%d, experiments_queued=%d",
+            current_state.value,
+            self.research_plan.iteration_count,
+            self.research_plan.max_iterations,
+            len(self.research_plan.hypothesis_pool),
+            len(self.research_plan.get_untested_hypotheses()),
+            len(self.research_plan.experiment_queue)
+        )
 
         # Check convergence first
         if self._should_check_convergence():
@@ -1272,8 +1283,14 @@ Provide a structured, actionable plan in 2-3 paragraphs.
         Args:
             action: Action to execute
         """
-        logger.info(f"Executing next action: {action}")
+        logger.info("[ACTION] Executing: %s", action.value)
 
+        tracker = get_stage_tracker()
+        with tracker.track(f"ACTION_{action.value}", action=action.value):
+            self._do_execute_action(action)
+
+    def _do_execute_action(self, action: NextAction):
+        """Internal method to execute action (wrapped by stage tracking)."""
         if action == NextAction.GENERATE_HYPOTHESIS:
             self._send_to_hypothesis_generator(action="generate")
 

@@ -277,7 +277,8 @@ class AlertManager:
             health_checker = get_health_checker()
             db_status = health_checker._check_database()
             return db_status["status"] != "healthy"
-        except:
+        except Exception as e:
+            logger.warning("Database connection check error: %s", e, exc_info=True)
             return False
 
     def _check_api_failure_rate(self) -> bool:
@@ -299,7 +300,8 @@ class AlertManager:
             memory = psutil.virtual_memory()
             # Alert if memory usage > 85%
             return memory.percent > 85
-        except:
+        except Exception as e:
+            logger.warning("Memory usage check error: %s", e, exc_info=True)
             return False
 
     def _check_disk_usage(self) -> bool:
@@ -309,7 +311,8 @@ class AlertManager:
             disk = psutil.disk_usage('/')
             # Alert if disk usage > 90%
             return disk.percent > 90
-        except:
+        except Exception as e:
+            logger.warning("Disk usage check error: %s", e, exc_info=True)
             return False
 
     def _check_experiment_failure_rate(self) -> bool:
@@ -325,7 +328,8 @@ class AlertManager:
             health_checker = get_health_checker()
             cache_status = health_checker._check_cache()
             return cache_status["status"] == "unhealthy"
-        except:
+        except Exception as e:
+            logger.warning("Cache availability check error: %s", e, exc_info=True)
             return False
 
 

@@ -37,6 +37,7 @@ from kosmos.cli.utils import (
 )
 from kosmos.cli.interactive import run_interactive_mode
 from kosmos.cli.views.results_viewer import ResultsViewer
+from kosmos.core.stage_tracker import get_stage_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -242,9 +243,14 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
             loop_start_time = time.time()
             max_loop_duration = 7200  # 2 hours max runtime
 
+            # Initialize stage tracker for this research run
+            tracker = get_stage_tracker(process_id=f"research_{int(time.time())}")
+
             logger.info(f"Starting research loop (max_iterations={max_iterations})")
 
             while iteration < max_iterations:
+                loop_iteration_start = time.time()
+
                 # Check for timeout
                 elapsed_time = time.time() - loop_start_time
                 if elapsed_time > max_loop_duration:
@@ -256,10 +262,13 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
                     )
                     break
 
+                # Update tracker iteration
+                tracker.set_iteration(iteration)
+
                 # Get current status
                 status = director.get_research_status()
 
-                # Log current state
+                # Log current state with enhanced debug info
                 logger.info(
                     f"Loop iteration {iteration}: workflow_state={status.get('workflow_state')}, "
                     f"iteration_count={status.get('iteration')}, "
@@ -307,6 +316,17 @@ def run_with_progress(director, question: str, max_iterations: int) -> dict:
                 if new_iteration != iteration:
                     logger.info(f"Iteration advanced from {iteration} to {new_iteration}")
                 iteration = new_iteration
+
+                # Log iteration timing and state at end of loop
+                loop_duration = time.time() - loop_iteration_start
+                logger.info(
+                    "[ITER %d/%d] state=%s, hyps=%d, exps=%d, duration=%.2fs",
+                    iteration, max_iterations,
+                    status.get('workflow_state'),
+                    status.get('hypothesis_pool_size', 0),
+                    status.get('experiments_completed', 0),
+                    loop_duration
+                )
 
                 # Small delay to allow UI updates
                 time.sleep(0.05)

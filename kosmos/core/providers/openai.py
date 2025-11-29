@@ -172,7 +172,17 @@ class OpenAIProvider(LLMProvider):
         Raises:
             ProviderAPIError: If the API call fails
         """
+        import time as time_module
         try:
+            # Check if LLM call logging is enabled
+            log_llm = False
+            try:
+                from kosmos.config import get_config
+                config = get_config()
+                log_llm = config.logging.log_llm_calls
+            except Exception:
+                pass
+
             # Build messages (OpenAI format: system is first message)
             messages = []
             if system:
@@ -189,6 +199,20 @@ class OpenAIProvider(LLMProvider):
 
             if stop_sequences:
                 api_args["stop"] = stop_sequences
+
+            # Pre-call logging
+            if log_llm:
+                logger.debug(
+                    "[LLM] Request: model=%s, prompt_len=%d, system_len=%d, "
+                    "max_tokens=%d, temp=%.2f",
+                    self.model,
+                    len(prompt),
+                    len(system or ""),
+                    max_tokens,
+                    temperature
+                )
+
+            start_time = time_module.time()
 
             # Call OpenAI API
             response = self.client.chat.completions.create(**api_args, timeout=self.timeout)
@@ -207,6 +231,19 @@ class OpenAIProvider(LLMProvider):
                 input_tokens = self._estimate_tokens(prompt + (system or ""))
                 output_tokens = self._estimate_tokens(text)
                 total_tokens = input_tokens + output_tokens
+
+            # Post-call logging
+            latency_ms = int((time_module.time() - start_time) * 1000)
+            if log_llm:
+                logger.debug(
+                    "[LLM] Response: model=%s, in_tokens=%d, out_tokens=%d, "
+                    "latency=%dms, finish=%s",
+                    self.model,
+                    input_tokens,
+                    output_tokens,
+                    latency_ms,
+                    finish_reason or "unknown"
+                )
 
             # Calculate cost (only for OpenAI official)
             cost = self._calculate_cost(input_tokens, output_tokens) if self.provider_type == 'openai' else None

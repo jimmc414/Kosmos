@@ -157,9 +157,19 @@ class AnthropicProvider(LLMProvider):
         Raises:
             ProviderAPIError: If the API call fails
         """
+        import time as time_module
         try:
             bypass_cache = kwargs.get('bypass_cache', False)
             model_override = kwargs.get('model_override', None)
+
+            # Check if LLM call logging is enabled
+            log_llm = False
+            try:
+                from kosmos.config import get_config
+                config = get_config()
+                log_llm = config.logging.log_llm_calls
+            except Exception:
+                pass
 
             # Model selection logic
             selected_model = self.model
@@ -237,6 +247,20 @@ class AnthropicProvider(LLMProvider):
             # Build message
             messages = [{"role": "user", "content": prompt}]
 
+            # Pre-call logging
+            if log_llm:
+                logger.debug(
+                    "[LLM] Request: model=%s, prompt_len=%d, system_len=%d, "
+                    "max_tokens=%d, temp=%.2f",
+                    selected_model,
+                    len(prompt),
+                    len(system or ""),
+                    max_tokens,
+                    temperature
+                )
+
+            start_time = time_module.time()
+
             # Call Anthropic API
             response = self.client.messages.create(
                 model=selected_model,
@@ -250,6 +274,19 @@ class AnthropicProvider(LLMProvider):
 
             # Extract text and usage
             text = response.content[0].text
+
+            # Post-call logging
+            latency_ms = int((time_module.time() - start_time) * 1000)
+            if log_llm:
+                logger.debug(
+                    "[LLM] Response: model=%s, in_tokens=%d, out_tokens=%d, "
+                    "latency=%dms, finish=%s",
+                    selected_model,
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
+                    latency_ms,
+                    response.stop_reason if hasattr(response, 'stop_reason') else "unknown"
+                )
             usage_stats = UsageStats(
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,

@@ -287,21 +287,64 @@ class LiteLLMProvider(LLMProvider):
         Returns:
             LLMResponse: Unified response object
         """
+        import time as time_module
+
+        # Check if LLM call logging is enabled
+        log_llm = False
+        try:
+            from kosmos.config import get_config
+            config = get_config()
+            log_llm = config.logging.log_llm_calls
+        except Exception:
+            pass
+
         messages = self._build_messages(prompt, system)
         effective_max_tokens = self._get_effective_max_tokens(max_tokens)
+        effective_temperature = temperature if temperature is not None else self.temperature_default
+
+        # Pre-call logging
+        if log_llm:
+            logger.debug(
+                "[LLM] Request: model=%s, prompt_len=%d, system_len=%d, "
+                "max_tokens=%d, temp=%.2f",
+                self.model,
+                len(prompt),
+                len(system or ""),
+                effective_max_tokens,
+                effective_temperature
+            )
+
+        start_time = time_module.time()
 
         try:
             response = self.litellm.completion(
                 model=self.model,
                 messages=messages,
                 max_tokens=effective_max_tokens,
-                temperature=temperature if temperature is not None else self.temperature_default,
+                temperature=effective_temperature,
                 stop=stop_sequences,
                 api_key=self.api_key,
                 api_base=self.api_base,
                 timeout=self.timeout,
                 **kwargs
             )
+
+            # Post-call logging
+            latency_ms = int((time_module.time() - start_time) * 1000)
+            if log_llm:
+                usage_data = response.usage if hasattr(response, 'usage') else None
+                input_tokens = getattr(usage_data, 'prompt_tokens', 0) if usage_data else 0
+                output_tokens = getattr(usage_data, 'completion_tokens', 0) if usage_data else 0
+                logger.debug(
+                    "[LLM] Response: model=%s, in_tokens=%d, out_tokens=%d, "
+                    "latency=%dms, finish=%s",
+                    self.model,
+                    input_tokens,
+                    output_tokens,
+                    latency_ms,
+                    response.choices[0].finish_reason if response.choices else "unknown"
+                )
+
             return self._parse_response(response)
 
         except Exception as e:

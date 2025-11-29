@@ -283,6 +283,22 @@ class ResearchWorkflow:
                 f"Allowed transitions: {self.ALLOWED_TRANSITIONS[self.current_state]}"
             )
 
+        # Calculate time in previous state
+        time_in_state = 0.0
+        if self.transition_history:
+            last_transition = self.transition_history[-1]
+            time_in_state = (datetime.utcnow() - last_transition.timestamp).total_seconds()
+
+        # Enhanced transition logging
+        logger.debug(
+            "[WORKFLOW] Transition: %s -> %s (was in %s for %.2fs) action='%s'",
+            self.current_state.value,
+            target_state.value,
+            self.current_state.value,
+            time_in_state,
+            action
+        )
+
         # Create transition record
         transition = WorkflowTransition(
             from_state=self.current_state,
