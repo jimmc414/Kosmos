@@ -4,7 +4,7 @@
 
 This document tracks the status of tests after the Phase 1 Production Overhaul.
 
-**Date**: 2025-11-25
+**Date**: 2025-11-29
 **Total New Tests Created**: 339 (all passing)
 
 ## New Gap Module Tests (All Passing)
@@ -26,8 +26,10 @@ This document tracks the status of tests after the Phase 1 Production Overhaul.
 - `tests/integration/test_validation_pipeline.py` - ScholarEval batch validation
 - `tests/integration/test_research_workflow.py` - Single/multi-cycle execution
 
-### E2E Tests (23 tests)
+### E2E Tests (39 tests)
 - `tests/e2e/test_autonomous_research.py` - Multi-cycle autonomous operation verification
+- `tests/e2e/test_system_sanity.py` - System sanity checks
+- `tests/e2e/test_full_research_workflow.py` - Full research workflow tests
 
 ## Legacy Tests Status
 
