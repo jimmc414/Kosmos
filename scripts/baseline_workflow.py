@@ -59,7 +59,8 @@ def run_baseline(num_cycles: int = 3):
     print("=" * 60)
 
     # Initialize agents
-    hypothesis_agent = HypothesisGeneratorAgent(config={"num_hypotheses": 2})
+    # Disable literature search to avoid API hangs
+    hypothesis_agent = HypothesisGeneratorAgent(config={"num_hypotheses": 2, "use_literature_context": False})
     experiment_agent = ExperimentDesignerAgent(config={})
 
     results = {

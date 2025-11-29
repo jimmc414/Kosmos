@@ -332,8 +332,12 @@ class SemanticScholarClient(BaseLiteratureClient):
         pub_date = None
         if result.publicationDate:
             try:
-                pub_date = datetime.strptime(result.publicationDate, "%Y-%m-%d")
-            except ValueError:
+                # S2 library may return datetime or string depending on version
+                if isinstance(result.publicationDate, datetime):
+                    pub_date = result.publicationDate
+                else:
+                    pub_date = datetime.strptime(result.publicationDate, "%Y-%m-%d")
+            except (ValueError, TypeError):
                 pass
 
         # Get PDF URL from open access
