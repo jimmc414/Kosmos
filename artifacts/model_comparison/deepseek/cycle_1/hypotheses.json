@@ -1,0 +1,14 @@
+[
+  {
+    "id": "3b63aa5f-f569-4230-935d-fdcb727e3f6c",
+    "statement": "Enzyme activity increases with temperature up to an optimal temperature of 37\u00b0C, then sharply declines due to thermal denaturation, with maximum activity occurring between 35-40\u00b0C for mammalian enzymes.",
+    "rationale": "This hypothesis is based on the well-established principle that enzyme reaction rates generally increase with temperature due to increased molecular kinetic energy and collision frequency, following the Q10 rule where reaction rates approximately double with every 10\u00b0C increase. However, above an optimal temperature, protein tertiary structure begins to unfold, disrupting the active site and causing irreversible denaturation. The 35-40\u00b0C range reflects typical mammalian physiological temperatures where enzymes evolved to function optimally. While this general pattern is well-documented, specific optimal temperatures vary by enzyme source and environmental adaptation.",
+    "domain": "biology"
+  },
+  {
+    "id": "40e871d6-c528-4dea-81db-5330c91921f0",
+    "statement": "Temperature stress induces increased production of heat shock proteins that protect enzyme structure, maintaining higher enzymatic activity under thermal stress conditions compared to enzymes without such protective mechanisms.",
+    "rationale": "Building on literature about environmental stress responses in plants and microbes (Response of Plant Secondary Metabolites to Environmental Factors, 2018; Microbial control over carbon cycling in soil, 2012), this hypothesis proposes that organisms activate protective mechanisms under temperature stress. Heat shock proteins function as molecular chaperones that prevent protein aggregation and assist in refolding denatured proteins. This protective system should allow enzymes to maintain functional conformation at temperatures that would normally cause denaturation. The mechanism represents an evolutionary adaptation to thermal variability, though the effectiveness varies by species and specific environmental conditions.",
+    "domain": "biology"
+  }
+]

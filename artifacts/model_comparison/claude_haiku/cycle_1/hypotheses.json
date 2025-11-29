@@ -1,0 +1,14 @@
+[
+  {
+    "id": "359eb276-eeeb-4123-b0a2-61a8f4dc9287",
+    "statement": "Enzyme activity increases linearly with temperature from 0\u00b0C to an optimal temperature (typically 37-40\u00b0C for mammalian enzymes), then decreases sharply above this temperature due to protein denaturation, with the rate of activity decline above optimal temperature being steeper than the rate of increase below it.",
+    "rationale": "This hypothesis is grounded in fundamental enzyme kinetics theory. At lower temperatures, increased molecular motion enhances enzyme-substrate collision frequency and binding rates, following Arrhenius principles. The relationship remains approximately linear in the physiological range due to increased kinetic energy. However, above the optimal temperature, hydrogen bonds and tertiary structure of the enzyme protein denature irreversibly, causing a precipitous loss of catalytic activity. This biphasic response has been well-documented across diverse enzyme systems (Michaelis-Menten kinetics and transition state theory). The asymmetry in the curve (steeper decline than ascent) reflects the cooperative nature of protein unfolding. While the provided literature context focuses on environmental factors affecting organisms, the fundamental principle of temperature-dependent enzyme kinetics applies universally across biological systems.",
+    "domain": "biology"
+  },
+  {
+    "id": "3c9a3770-c5b6-42ff-afea-8a92d4607818",
+    "statement": "The temperature coefficient (Q10) for enzyme activity varies inversely with substrate concentration, such that enzymes operating at saturating substrate concentrations exhibit lower Q10 values (1.5-2.0) compared to enzymes operating at limiting substrate concentrations (2.5-4.0), indicating that temperature sensitivity is substrate-dependent.",
+    "rationale": "This hypothesis addresses a nuanced mechanistic aspect of enzyme kinetics often overlooked in introductory treatments. At limiting substrate concentrations, the rate-limiting step is substrate binding, which is highly temperature-sensitive (governed by diffusion rates and collision frequency). At saturating substrate concentrations, the rate-limiting step shifts to the catalytic turnover (kcat), which has a lower temperature sensitivity. This substrate-concentration-dependent Q10 effect has implications for understanding how enzymes maintain metabolic homeostasis across varying environmental conditions. The hypothesis integrates enzyme kinetics with environmental physiology, relevant to the literature context on 'Response of Plant Secondary Metabolites to Environmental Factors' and 'Microbial control over carbon cycling,' where substrate availability and temperature co-vary in natural ecosystems. This represents a testable prediction that distinguishes between different regulatory mechanisms.",
+    "domain": "biology"
+  }
+]

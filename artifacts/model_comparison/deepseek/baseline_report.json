@@ -1,0 +1,34 @@
+{
+  "run_timestamp": "2025-11-29T05:56:19.813415",
+  "config": {
+    "research_question": "How does temperature affect enzyme activity?",
+    "domain": "biology",
+    "num_cycles": 1,
+    "llm_provider": "litellm/ollama/qwen3-kosmos-fast"
+  },
+  "workflow_results": {
+    "cycles_completed": 1,
+    "hypotheses_generated": 2,
+    "experiments_designed": 1,
+    "cycle_times": [
+      79.72842836380005
+    ],
+    "error": null
+  },
+  "provider_usage": {
+    "provider": "litellm",
+    "total_requests": 3,
+    "total_input_tokens": 1904,
+    "total_output_tokens": 2175,
+    "total_tokens": 4079,
+    "total_cost_usd": 0.00087556
+  },
+  "timing": {
+    "total_seconds": 79.87087678909302,
+    "total_minutes": 1.331181279818217,
+    "avg_per_cycle": 79.87087678909302,
+    "cycle_times": [
+      79.72842836380005
+    ]
+  }
+}

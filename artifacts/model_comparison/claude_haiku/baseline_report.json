@@ -1,0 +1,78 @@
+{
+  "run_timestamp": "2025-11-29T06:05:29.694233",
+  "config": {
+    "research_question": "How does temperature affect enzyme activity?",
+    "domain": "biology",
+    "num_cycles": 1,
+    "llm_provider": "litellm/ollama/qwen3-kosmos-fast"
+  },
+  "workflow_results": {
+    "cycles_completed": 1,
+    "hypotheses_generated": 2,
+    "experiments_designed": 0,
+    "cycle_times": [
+      43.35612750053406
+    ],
+    "error": null
+  },
+  "provider_usage": {
+    "provider": "anthropic",
+    "total_requests": 2,
+    "total_input_tokens": 1921,
+    "total_output_tokens": 4747,
+    "total_tokens": 6668,
+    "total_cost_usd": 0.020524799999999996,
+    "cache_enabled": true,
+    "cache_hits": 0,
+    "cache_misses": 2,
+    "cache_hit_rate_percent": 0.0,
+    "mode": "api",
+    "cache_stats": {
+      "hits": 0,
+      "misses": 1,
+      "sets": 1,
+      "evictions": 0,
+      "errors": 0,
+      "invalidations": 0,
+      "total_requests": 1,
+      "hit_rate_percent": 0.0,
+      "ttl_seconds": 3600,
+      "size": 9,
+      "memory_cache": {
+        "hits": 0,
+        "misses": 1,
+        "sets": 1,
+        "evictions": 0,
+        "errors": 0,
+        "invalidations": 0,
+        "total_requests": 1,
+        "hit_rate_percent": 0.0,
+        "ttl_seconds": 3600,
+        "size": 1
+      },
+      "disk_cache": {
+        "hits": 0,
+        "misses": 1,
+        "sets": 1,
+        "evictions": 0,
+        "errors": 0,
+        "invalidations": 0,
+        "total_requests": 1,
+        "hit_rate_percent": 0.0,
+        "ttl_seconds": 3600,
+        "size": 9
+      },
+      "normalization_enabled": true,
+      "similarity_enabled": false,
+      "similarity_threshold": 0.95
+    }
+  },
+  "timing": {
+    "total_seconds": 43.500312089920044,
+    "total_minutes": 0.7250052014986674,
+    "avg_per_cycle": 43.500312089920044,
+    "cycle_times": [
+      43.35612750053406
+    ]
+  }
+}

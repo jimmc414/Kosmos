@@ -1,0 +1,14 @@
+[
+  {
+    "id": "9f7799e6-25e7-42b0-88b6-2804dcd453e4",
+    "statement": "Increasing temperature will enhance the catalytic activity of enzyme X up to an optimal temperature, beyond which the activity will decline.",
+    "rationale": "Enzymes are proteins that catalyze biochemical reactions, and their activity is highly sensitive to temperature. According to the Arrhenius equation, reaction rates generally increase with temperature until a point of denaturation occurs. This is supported by literature on enzyme kinetics, which indicates that each enzyme has an optimal temperature range where it functions best. While the specific enzyme X's behavior at varying temperatures has not been extensively studied, similar patterns have been observed in other enzymes, thus leading to the expectation of a biphasic response to temperature changes.",
+    "domain": "biology"
+  },
+  {
+    "id": "aaa8daa3-f153-490f-9cd3-8811fcd2d8f8",
+    "statement": "Decreasing temperature will reduce the rate of enzyme-catalyzed reactions by slowing molecular motion and decreasing substrate binding efficiency.",
+    "rationale": "Lower temperatures generally decrease molecular motion, which can impede the binding of substrates to enzymes and slow down reaction rates. This aligns with the collision theory of chemical reactions, which posits that higher kinetic energy (associated with higher temperatures) increases the likelihood of effective collisions between enzymes and substrates. Previous studies on enzyme kinetics have consistently shown that as temperatures decrease, reaction rates drop significantly, providing a strong theoretical basis for this hypothesis. However, the extent of this effect may vary among different enzymes, which is a potential limitation.",
+    "domain": "biology"
+  }
+]

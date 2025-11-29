@@ -1,0 +1,14 @@
+[
+  {
+    "id": "9feff6f4-8e88-4280-b9e1-707fa7e73899",
+    "statement": "Increasing temperature from 20\u00b0C to 40\u00b0C will increase enzyme activity by 50-80% due to enhanced molecular motion and collision frequency, with activity peaking at 37\u00b0C followed by a sharp decline above 45\u00b0C due to denaturation.",
+    "rationale": "This hypothesis is based on the fundamental principles of enzyme kinetics and protein structure. As temperature increases, molecular kinetic energy rises, leading to more frequent and energetic collisions between enzymes and substrates, thereby increasing reaction rates according to Arrhenius kinetics. However, proteins have optimal temperature ranges beyond which thermal energy disrupts the weak bonds maintaining tertiary and quaternary structure, causing denaturation and loss of catalytic function. Most enzymes from mesophilic organisms show peak activity around 37\u00b0C, with rapid decline above this temperature. The predicted 50-80% increase assumes typical Q10 values of 2-3 for enzyme-catalyzed reactions.",
+    "domain": "biology"
+  },
+  {
+    "id": "67a22d1f-fc54-439b-b4c4-d3023a361f39",
+    "statement": "Temperature increases from 25\u00b0C to 45\u00b0C will cause a progressive shift in enzyme kinetics from Michaelis-Menten saturation kinetics at lower temperatures to first-order kinetics at higher temperatures due to thermal effects on enzyme-substrate complex stability.",
+    "rationale": "This hypothesis stems from the temperature dependence of enzyme-substrate complex formation and dissociation. At lower temperatures, enzyme-substrate complexes are more stable, leading to saturation kinetics where reaction rate plateaus at high substrate concentrations. As temperature increases, thermal energy disrupts the precise molecular interactions required for stable complex formation, increasing dissociation rates and shifting the system toward first-order kinetics where reaction rate remains proportional to substrate concentration across the measurable range. This reflects the temperature sensitivity of the Km parameter and the delicate balance between productive binding and thermal disruption of the active site conformation.",
+    "domain": "biology"
+  }
+]

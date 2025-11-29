@@ -1,0 +1,14 @@
+[
+  {
+    "id": "c7894b64-faa2-472f-b977-212dfb026bc5",
+    "statement": "Increasing temperature from 20\u00b0C to 40\u00b0C will increase enzyme activity by at least 50% due to enhanced molecular motion and collision frequency, but further increases to 60\u00b0C will decrease activity by at least 80% due to protein denaturation.",
+    "rationale": "This hypothesis is based on the fundamental principles of enzyme kinetics and protein structure. At moderate temperature increases, enzyme activity typically rises due to increased kinetic energy that enhances substrate-enzyme collisions and reaction rates, following Arrhenius kinetics. However, most enzymes have optimal temperature ranges beyond which thermal energy disrupts the precise three-dimensional structure required for catalytic function. The predicted denaturation at higher temperatures reflects the loss of secondary and tertiary protein structure through disruption of hydrogen bonds and hydrophobic interactions. This temperature-dependent activity pattern has been observed across numerous enzyme systems, though the specific temperature thresholds vary by enzyme type and organism source.",
+    "domain": "biology"
+  },
+  {
+    "id": "829a8a43-43d1-4f16-b3fd-ad4c9561534c",
+    "statement": "Temperature increases from 25\u00b0C to 45\u00b0C will cause a logarithmic increase in enzyme reaction rates with a Q10 coefficient between 2.0 and 3.0, indicating that reaction rates approximately double to triple for every 10\u00b0C temperature increase within this range.",
+    "rationale": "This hypothesis is grounded in the temperature coefficient (Q10) principle of biochemical reactions, which describes how reaction rates change with temperature. The Q10 value of 2-3 is typical for many enzyme-catalyzed reactions and reflects the temperature sensitivity of the activation energy barrier. As temperature increases, more molecules possess sufficient energy to overcome the activation energy required for the reaction, following the Maxwell-Boltzmann distribution. This relationship is mathematically described by the Arrhenius equation, where reaction rate increases exponentially with temperature. The specific Q10 range prediction is based on empirical observations across diverse enzyme systems, though the exact value depends on the enzyme's specific activation energy requirements and the reaction mechanism involved.",
+    "domain": "biology"
+  }
+]

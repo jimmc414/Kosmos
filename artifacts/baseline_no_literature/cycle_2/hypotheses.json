@@ -1,0 +1,14 @@
+[
+  {
+    "id": "249d6818-1dd3-4a05-9b0f-3ea7d0839225",
+    "statement": "Enzyme activity increases with temperature up to an optimal point (approximately 37\u00b0C for mammalian enzymes), then sharply decreases due to thermal denaturation, following a characteristic bell-shaped curve.",
+    "rationale": "This hypothesis is based on the collision theory and protein structure principles. At lower temperatures, molecular motion increases with temperature, leading to more frequent enzyme-substrate collisions and higher reaction rates. However, above the optimal temperature, thermal energy disrupts the weak bonds (hydrogen bonds, hydrophobic interactions) that maintain enzyme tertiary structure, causing denaturation and loss of catalytic function. The specific optimal temperature varies by enzyme source, with mammalian enzymes typically optimized around body temperature (37\u00b0C). This relationship is well-established in biochemistry textbooks, though the exact shape and optimal temperature would need empirical determination for specific enzymes.",
+    "domain": "biology"
+  },
+  {
+    "id": "b9cb01a1-92fd-40a9-ac66-23bdfaf104a8",
+    "statement": "Temperature affects enzyme activity by altering the activation energy barrier, with each 10\u00b0C increase in temperature doubling the reaction rate (Q10 = 2) until denaturation occurs, following Arrhenius kinetics.",
+    "rationale": "This hypothesis is grounded in chemical kinetics and the Arrhenius equation, which describes how temperature affects reaction rates. The Q10 temperature coefficient (typically 2 for biological systems) represents the factor by which reaction rate increases per 10\u00b0C temperature rise. This occurs because higher temperatures provide more molecules with sufficient kinetic energy to overcome the activation energy barrier for the enzyme-catalyzed reaction. The relationship should hold true across the temperature range where the enzyme remains structurally intact. While this principle is theoretically sound, actual Q10 values can vary between enzymes and experimental conditions, requiring empirical validation for specific enzyme systems.",
+    "domain": "biology"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "9f60d361-c396-46a0-a6b9-f8acb264edee",
+    "statement": "Enzyme activity increases with temperature up to an optimal point (approximately 37\u00b0C for mammalian enzymes), then sharply decreases due to thermal denaturation, following a characteristic bell-shaped curve when measured by reaction rate.",
+    "rationale": "This hypothesis is grounded in the Arrhenius equation and protein thermodynamics. Lower temperatures reduce molecular kinetic energy, slowing substrate-enzyme collisions. As temperature rises, collision frequency increases, enhancing reaction rates until the optimal temperature is reached. Beyond this point, thermal energy disrupts hydrogen bonds and van der Waals interactions that maintain enzyme tertiary structure, causing denaturation and rapid activity loss. While the literature context doesn't directly address enzyme kinetics, the 'Response of Plant Secondary Metabolites to Environmental Factors' suggests biological systems exhibit predictable responses to environmental variables like temperature. A limitation is that optimal temperatures vary by enzyme source (e.g., thermophilic vs. psychrophilic organisms).",
+    "domain": "biology"
+  },
+  {
+    "id": "21f36a68-faa4-43f6-8b44-cbe7ec3992dc",
+    "statement": "Temperature-induced changes in membrane fluidity affect the activity of membrane-bound enzymes more significantly than soluble enzymes, with fluidity increases enhancing activity up to a threshold, after which membrane disintegration causes rapid decline.",
+    "rationale": "This hypothesis builds on membrane biophysics and enzyme localization effects. Membrane-bound enzymes (e.g., cytochrome P450, ATPases) depend on lipid bilayer properties for optimal function. Temperature increases enhance membrane fluidity, improving substrate accessibility and enzyme conformational flexibility. However, excessive fluidity disrupts membrane integrity and protein-lipid interactions critical for function. The 'Microbial control over carbon cycling in soil' indirectly supports this, as soil microbial enzymes operate in complex matrices where physical environment affects function. Soluble enzymes lack this membrane dependency, showing different thermal response patterns. This mechanism explains why thermal tolerance varies among enzyme classes, though it requires controlling for enzyme purity and membrane composition.",
+    "domain": "biology"
+  }
+]

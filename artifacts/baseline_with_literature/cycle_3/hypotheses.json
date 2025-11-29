@@ -1,0 +1,14 @@
+[
+  {
+    "id": "e66e4da1-3f6f-48a6-aa8e-6b6e98c30540",
+    "statement": "Increasing temperature from 20\u00b0C to 40\u00b0C will increase the catalytic rate of the enzyme catalase by at least 50% when measured using hydrogen peroxide decomposition assays.",
+    "rationale": "Based on fundamental enzyme kinetics theory, enzyme activity typically increases with temperature due to enhanced molecular motion and collision frequency between enzyme and substrate molecules. The Arrhenius equation predicts that reaction rates approximately double for every 10\u00b0C increase in temperature. However, this relationship is expected to hold only up to an optimal temperature range before thermal denaturation occurs. While the literature context doesn't directly address enzyme kinetics, the Response of Plant Secondary Metabolites to Environmental Factors (2018) suggests that biological systems show predictable responses to environmental variables like temperature. A limitation is that this relationship may vary across different enzyme classes and organisms.",
+    "domain": "biology"
+  },
+  {
+    "id": "fcd7d012-a2b4-409d-9702-b88456504b35",
+    "statement": "Enzyme thermal stability will decrease by more than 30% when temperature exceeds 45\u00b0C due to irreversible protein denaturation, as measured by circular dichroism spectroscopy and activity assays.",
+    "rationale": "This hypothesis is grounded in protein biochemistry principles where high temperatures disrupt the weak non-covalent interactions (hydrogen bonds, hydrophobic interactions, ionic bonds) that maintain enzyme tertiary structure. The Microbial control over carbon cycling in soil (2012) paper indirectly supports this mechanism by highlighting how environmental factors affect microbial enzyme function in ecosystems. Protein denaturation follows cooperative unfolding patterns where small temperature increases beyond a critical threshold can cause rapid structural collapse. The 45\u00b0C threshold represents a typical denaturation point for many mesophilic enzymes, though thermophilic enzymes would show different patterns. This prediction acknowledges that denaturation kinetics may vary depending on enzyme composition and stabilizing factors.",
+    "domain": "biology"
+  }
+]
