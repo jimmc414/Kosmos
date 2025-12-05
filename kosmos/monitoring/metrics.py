@@ -257,8 +257,8 @@ class MetricsCollector:
                 'platform': platform.system(),
                 'architecture': platform.machine()
             })
-        except:
-            pass
+        except Exception as e:
+            logger.debug("Failed to collect system info for metrics: %s", e)
 
     # Research tracking
     def track_research_cycle(self, domain: str, status: str, duration: Optional[float] = None):

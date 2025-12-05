@@ -103,9 +103,10 @@ class ResearchDirectorAgent(BaseAgent):
         from kosmos.db import init_from_config
         try:
             init_from_config()
-        except RuntimeError:
-            # Database already initialized
-            pass
+        except RuntimeError as e:
+            # Database already initialized - only log if it's a different error
+            if "already initialized" not in str(e).lower():
+                logger.warning("Database init RuntimeError: %s", e)
         except Exception as e:
             logger.warning(f"Database initialization failed: {e}")
 

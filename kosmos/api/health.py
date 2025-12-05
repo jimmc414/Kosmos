@@ -371,7 +371,7 @@ class HealthChecker:
         try:
             from kosmos import __version__
             return __version__
-        except:
+        except Exception:
             return "unknown"
 
     def _get_load_average(self) -> Optional[list]:
@@ -381,7 +381,7 @@ class HealthChecker:
                 load = os.getloadavg()
                 return [round(l, 2) for l in load]
             return None
-        except:
+        except Exception:
             return None
 
     def _get_num_fds(self, process) -> Optional[int]:
@@ -390,7 +390,7 @@ class HealthChecker:
             if hasattr(process, 'num_fds'):
                 return process.num_fds()
             return None
-        except:
+        except Exception:
             return None
 
 
