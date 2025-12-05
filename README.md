@@ -4,11 +4,11 @@ Open-source implementation of the autonomous AI scientist described in [Lu et al
 
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
-[![Implementation](https://img.shields.io/badge/gaps-6%2F6%20complete-green.svg)](IMPLEMENTATION_REPORT.md)
+[![Implementation](https://img.shields.io/badge/core-75%25%20production--ready-green.svg)](120525_implementation_gaps_v2.md)
+[![Implementation](https://img.shields.io/badge/deferred-20%25%20Phase%202%2F4-yellow.svg)](120525_implementation_gaps_v2.md)
 [![Tests](https://img.shields.io/badge/unit-339%20passing-green.svg)](TESTS_STATUS.md)
-[![Tests](https://img.shields.io/badge/E2E-32%2F39%20passing-yellow.svg)](TESTS_STATUS.md)
 
-**Current state**: All 6 gaps implemented. Debug mode with enhanced observability now available. Model comparison infrastructure tested across DeepSeek, GPT-4o-mini, and Claude Haiku 4.5. E2E testing validated with local LLMs via Ollama/LiteLLM. See [Project Status](#project-status) for honest assessment of remaining work.
+**Current state**: Core research loop operational. All 6 original paper gaps implemented. Neo4j knowledge graph fully implemented (1,025 lines) but requires integration testing. Debug mode with `--trace` flag provides full observability. See [Project Status](#project-status) for honest assessment and [Implementation Gaps Analysis](120525_implementation_gaps_v2.md) for detailed breakdown.
 
 ## Paper Gap Analysis
 
@@ -133,19 +133,29 @@ Reference repositories in [`kosmos-reference/`](kosmos-reference/). Skills integ
 
 ## Project Status
 
-### Test Results (as of 2025-11-29)
+### Implementation Completeness (as of 2025-12-05)
+
+| Category | Percentage | Description |
+|----------|------------|-------------|
+| Production-ready | 75% | Core research loop, agents, LLM providers |
+| Deferred to future phases | 20% | Phase 2 annotations, Phase 4 production mode |
+| Known issues | 5% | ArXiv Python 3.11+ incompatibility |
+
+For detailed breakdown, see [Implementation Gaps Analysis](120525_implementation_gaps_v2.md).
+
+### Test Results
 
 | Category | Total | Pass | Fail | Skip | Notes |
 |----------|-------|------|------|------|-------|
 | Unit tests | 339 | 339 | 0 | 0 | Core gap implementations |
 | Integration | 43 | 43 | 0 | 0 | Pipeline tests |
 | LiteLLM provider | 22 | 22 | 0 | 0 | Multi-provider support |
-| E2E tests | 39 | 32 | 0 | 7 | Tested with Ollama |
+| E2E tests | 39 | 32 | 0 | 7 | Skipped pending Neo4j/Docker |
 
-Some E2E tests are skipped based on environment:
+E2E tests skipped based on environment:
+- Neo4j not configured (`@pytest.mark.requires_neo4j`)
 - Docker not running (sandbox execution tests)
-- Neo4j not configured (knowledge graph tests)
-- API keys not set (tests requiring LLM calls)
+- API keys not set (tests requiring live LLM calls)
 
 ### What Works
 
@@ -162,15 +172,32 @@ Some E2E tests are skipped based on environment:
 - Cost calculation and usage tracking per provider
 - Model comparison infrastructure (see [MODEL_COMPARISON_REPORT.md](MODEL_COMPARISON_REPORT.md))
 
-### What Does Not Work Yet
+### What Needs Work
 
-1. **Knowledge graph**: Neo4j integration requires external database setup. The code exists but is untested in E2E flows.
+1. **Neo4j Integration**: The knowledge graph is fully implemented (1,025 lines in `kosmos/knowledge/graph.py`) but:
+   - E2E tests are skipped (`@pytest.mark.skip(reason="Neo4j authentication not configured")`)
+   - Not integrated into the main research loop
+   - Requires Neo4j instance + environment variables to activate
 
-2. **Full autonomous loop**: While individual components work, running 20 cycles with 10 tasks each (as described in the paper) has not been validated. The workflow tends to converge early or requires manual intervention.
+2. **Budget Enforcement**: Cost tracking works, but execution continues when budget exceeded. The system:
+   - Tracks spending accurately via `MetricsCollector`
+   - Emits alerts at 50%, 75%, 90%, 100% thresholds
+   - Returns `budget_exceeded: True` but **does not halt**
 
-3. **Budget enforcement**: Cost calculation is implemented in all providers, but there is no mechanism to halt execution when a budget limit is reached.
+3. **Error Recovery**: Error handlers log errors but lack recovery strategy:
+   - No retry logic with backoff
+   - No circuit breaker pattern
+   - Workflow continues in degraded state after failures
 
-4. **Literature search**: The `arxiv` package has Python 3.11+ compatibility issues. Literature features are limited.
+4. **Phase 2 Features (Deferred)**: Annotation storage is stubbed:
+   - `add_annotation()` only logs, doesn't persist
+   - `get_annotations()` returns empty list
+   - Designed for future curation workflows
+
+5. **ArXiv Compatibility**: The `arxiv` package has Python 3.11+ issues:
+   - Depends on `sgmllib3k` which may fail to build
+   - Semantic Scholar works as fallback
+   - Not blocking for core functionality
 
 ### Honest Assessment
 
@@ -185,23 +212,52 @@ The project is suitable for experimentation and further development, not product
 
 ### Next Steps
 
-1. Validate full research cycles with production LLMs
-2. Integrate Docker sandbox into E2E test suite
-3. Fix remaining test setup issues
-4. Add cost tracking and budget limits
-5. Document actual performance vs paper claims
+Prioritized implementation plan available in [Implementation Plan](120525_implementation_plan_v2.md).
+
+**Phase A: Critical Safety** (estimated 6 hours)
+1. Add budget enforcement - halt execution when limit exceeded
+2. Implement error recovery with exponential backoff
+
+**Phase B: Data Integrity** (estimated 5 hours)
+3. Implement annotation storage for Phase 2 curation
+4. Load actual hypothesis/result data for LLM prompts
+
+**Phase C: Performance** (estimated 4 hours)
+5. Implement true async in OpenAI/Anthropic providers
+
+**Phase D: Future-Proofing** (estimated 4 hours)
+6. Verify Neo4j integration with E2E tests
 
 ## Implementation Status
 
-### Recent Fixes (December 2025)
+### Phase Architecture
+
+The codebase follows a phased implementation approach:
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| Phase 1 | Simple Mode - JSON artifacts, entity storage (up to 10K entities) | Complete |
+| Phase 2 | Curation - Annotation storage, metadata management | Stubbed |
+| Phase 4 | Production Mode - Polyglot persistence (PostgreSQL + Neo4j + Elasticsearch) | Not Implemented |
+
+### December 2025 Updates
 
 | Category | Status | Details |
 |----------|--------|---------|
-| Code Quality | 100% | All silent exception handlers now log appropriately |
-| Debug Mode | 100% | All config flags fully implemented with config-gating |
-| Test Coverage | 55% | 15 critical modules pending (see `120525_implementation_gaps.md`) |
+| Code Quality | Complete | All silent exception handlers now log appropriately |
+| Debug Mode | Complete | All config flags implemented with config-gating |
+| Gaps Analysis | Complete | See [120525_implementation_gaps_v2.md](120525_implementation_gaps_v2.md) |
+| Implementation Plan | Complete | See [120525_implementation_plan_v2.md](120525_implementation_plan_v2.md) |
 
-### Debug Features Complete
+### NotImplementedError Summary
+
+10 occurrences across 6 files (verified):
+- 3 are Phase 2/4 deferred features (expected)
+- 4 are abstract base class methods (expected)
+- 2 are provider streaming (not all providers support)
+- 1 is domain-specific (neuroscience stage limit)
+
+### Debug Features
 - `--trace` flag for maximum verbosity
 - `log_llm_calls` - Token counts and latency for all providers
 - `log_agent_messages` - Inter-agent message routing with correlation tracking
@@ -210,19 +266,21 @@ The project is suitable for experimentation and further development, not product
 
 ## Limitations
 
-1. **Docker required**: Gap 4 execution environment requires Docker. Without it, code execution uses mock implementations.
+1. **Docker required**: Gap 4 execution environment requires Docker. Without it, code execution falls back to direct `exec()` which is unsafe.
 
-2. **Dependency compatibility**: The `arxiv` package fails to build on Python 3.11+ due to `sgmllib3k` incompatibility. Literature search features are limited without this package.
+2. **Neo4j optional**: Knowledge graph features require Neo4j. The implementation is complete but tests skip without it. Set `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` to enable.
 
-3. **Python only**: The paper references R packages (MendelianRandomization, susieR). This implementation is Python-only.
+3. **ArXiv compatibility**: The `arxiv` package may fail on Python 3.11+ due to `sgmllib3k`. Semantic Scholar is used as fallback.
 
-4. **LLM costs**: Running 20 research cycles with 10 tasks each requires significant API usage. Cost tracking is implemented but budget enforcement during execution is not.
+4. **Python only**: The paper references R packages (MendelianRandomization, susieR). This implementation is Python-only.
 
-5. **Single-user**: No multi-tenancy or user isolation.
+5. **No budget enforcement**: Cost tracking works but execution continues when budget exceeded. See [Implementation Plan](120525_implementation_plan_v2.md) for fix.
 
-6. **Not a reproduction study**: We have not reproduced the paper's 7 validated discoveries. This is an implementation of the architecture, not a validation of the results.
+6. **Async is sync**: LLM provider `generate_async()` methods currently delegate to sync. True async planned for Phase C.
 
-7. **Integration test maintenance**: Some integration tests have API mismatches with current implementation.
+7. **Single-user**: No multi-tenancy or user isolation.
+
+8. **Not a reproduction study**: We have not reproduced the paper's 7 validated discoveries. This is an implementation of the architecture, not a validation of the results.
 
 ## Getting Started
 
@@ -648,13 +706,20 @@ Stage tracking alone (without full debug logging) adds minimal overhead and is s
 
 ## Documentation
 
-- [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) - Original gap analysis
+### Current Status
+- [120525_implementation_gaps_v2.md](120525_implementation_gaps_v2.md) - **Detailed gaps analysis** (December 2025)
+- [120525_implementation_plan_v2.md](120525_implementation_plan_v2.md) - **Implementation plan with code** (December 2025)
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Development guidelines
+
+### Architecture
+- [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) - Original paper gap analysis
 - [OPENQUESTIONS_SOLUTION.md](OPENQUESTIONS_SOLUTION.md) - How gaps were addressed
 - [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md) - Architecture decisions
-- [PRODUCTION_READINESS_REPORT.md](PRODUCTION_READINESS_REPORT.md) - Current status
-- [TESTS_STATUS.md](TESTS_STATUS.md) - Test coverage
-- [MODEL_COMPARISON_REPORT.md](MODEL_COMPARISON_REPORT.md) - Multi-model performance comparison
+
+### Operations
 - [GETTING_STARTED.md](GETTING_STARTED.md) - Usage examples
+- [TESTS_STATUS.md](TESTS_STATUS.md) - Test coverage
+- [MODEL_COMPARISON_REPORT.md](MODEL_COMPARISON_REPORT.md) - Multi-model performance
 
 ## Based On
 
@@ -679,8 +744,8 @@ MIT License - see [LICENSE](LICENSE).
 
 ---
 
-Version: 0.2.0-alpha
-Gap Implementation: 6/6 complete
-Test Coverage: 339 unit tests + 43 integration tests passing
-Features: Debug mode, stage tracking, multi-provider support, model comparison
-Last Updated: 2025-12-05
+**Version**: 0.2.0-alpha
+**Core Implementation**: 75% production-ready | 20% Phase 2/4 deferred | 5% known issues
+**Tests**: 339 unit + 43 integration passing | 7 E2E skipped (environment-dependent)
+**Features**: Debug mode, stage tracking, multi-provider LLM support, Neo4j knowledge graph
+**Last Updated**: 2025-12-05
