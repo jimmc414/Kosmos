@@ -12,7 +12,6 @@ Tests the Kosmos CLI command functionality:
 
 import pytest
 import os
-from unittest.mock import Mock, patch, MagicMock
 from typer.testing import CliRunner
 
 from kosmos.cli.main import app

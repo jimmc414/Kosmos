@@ -12,7 +12,6 @@ Tests the ConvergenceDetector functionality:
 
 import pytest
 from datetime import datetime
-from unittest.mock import Mock, patch
 
 from kosmos.core.convergence import (
     ConvergenceDetector,

@@ -13,7 +13,6 @@ Tests the error recovery and circuit breaker functionality:
 import pytest
 import asyncio
 import time
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime
 
 from kosmos.core.async_llm import (

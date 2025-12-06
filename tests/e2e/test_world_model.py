@@ -16,8 +16,6 @@ import json
 import tempfile
 from pathlib import Path
 from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
-
 from kosmos.world_model.models import Entity, Relationship, Annotation
 from tests.e2e.factories import EntityFactory, RelationshipFactory, ResearchScenarioFactory
 from tests.e2e.conftest import requires_neo4j
