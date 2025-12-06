@@ -420,33 +420,89 @@ class TestPerformanceValidation:
 
     def test_parallel_vs_sequential_speedup(self):
         """Test parallel execution provides expected speedup."""
-        # This would run actual benchmarks
-        # For now, placeholder
-        assert True
+        import asyncio
+        import time
+        from kosmos.core.async_llm import RateLimiter
+
+        limiter = RateLimiter(max_requests_per_minute=120, max_concurrent=10)
+
+        async def measure_concurrency():
+            start = time.perf_counter()
+            # Acquire multiple permits concurrently
+            tasks = [limiter.acquire() for _ in range(5)]
+            await asyncio.gather(*tasks)
+            # Release all permits
+            for _ in range(5):
+                limiter.release()
+            return time.perf_counter() - start
+
+        duration = asyncio.run(measure_concurrency())
+        # Should complete quickly with concurrency
+        assert duration < 1.0, f"Concurrent acquisition took {duration:.2f}s, expected < 1.0s"
 
     def test_cache_hit_rate(self):
-        """Test cache hit rate meets target."""
-        # Verify cache is effective
-        assert True
+        """Test cache hit rate tracking."""
+        from kosmos.core.metrics import MetricsCollector
 
-    def test_api_cost_reduction(self):
-        """Test caching reduces API costs."""
-        # Verify cost savings from caching
-        assert True
+        collector = MetricsCollector()
+        # Simulate cache operations
+        for _ in range(10):
+            collector.record_cache_hit("test")
+        for _ in range(2):
+            collector.record_cache_miss("test")
+
+        stats = collector.get_cache_statistics()
+        # 10/12 = 83.3%
+        assert stats["cache_hit_rate_percent"] > 80.0, f"Cache hit rate {stats['cache_hit_rate_percent']}% < 80%"
+        collector.reset()
+
+    def test_api_cost_tracking(self):
+        """Test API cost estimation from token usage."""
+        from kosmos.core.metrics import MetricsCollector
+
+        collector = MetricsCollector()
+        # Record API call with token counts
+        collector.record_api_call(
+            model="claude-3-5-sonnet",
+            input_tokens=1000,
+            output_tokens=500,
+            duration_seconds=1.5,
+            success=True
+        )
+
+        stats = collector.get_api_statistics()
+        assert stats["total_calls"] == 1
+        assert stats["total_input_tokens"] == 1000
+        assert stats["total_output_tokens"] == 500
+        assert stats["estimated_cost_usd"] > 0, "Cost estimation should be positive"
+        collector.reset()
 
 
 @pytest.mark.e2e
 class TestCLIWorkflows:
     """Test complete CLI workflows."""
 
-    def test_cli_run_and_view_results(self):
-        """Test running research via CLI and viewing results."""
-        # This would use CliRunner to test full CLI flow
-        assert True
+    def test_cli_run_and_view_results(self, cli_runner):
+        """Test CLI commands work."""
+        from kosmos.cli.main import app
 
-    def test_cli_status_monitoring(self):
-        """Test monitoring research status via CLI."""
-        assert True
+        # Test version command
+        result = cli_runner.invoke(app, ["version"])
+        assert result.exit_code == 0, f"Version command failed: {result.stdout}"
+
+        # Test info command
+        result = cli_runner.invoke(app, ["info"])
+        assert result.exit_code == 0, f"Info command failed: {result.stdout}"
+
+    def test_cli_status_monitoring(self, cli_runner):
+        """Test doctor command for status monitoring."""
+        from kosmos.cli.main import app
+
+        result = cli_runner.invoke(app, ["doctor"])
+        # Doctor command checks system health - may return 0, 1, or 2 depending on status
+        assert result.exit_code in [0, 1, 2], f"Doctor command failed unexpectedly: {result.stdout}"
+        # Command should produce output
+        assert len(result.stdout) > 0 or len(result.output) > 0, "Doctor command produced no output"
 
 
 @pytest.mark.e2e
@@ -472,5 +528,40 @@ class TestDockerDeployment:
 
     def test_service_health_checks(self):
         """Test all services pass health checks."""
-        # Would verify all containers are healthy
-        assert True
+        import subprocess
+        import json
+
+        try:
+            result = subprocess.run(
+                ["docker", "compose", "ps", "--format", "json"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse JSON output - may be array or single object per line
+                output = result.stdout.strip()
+                try:
+                    if output.startswith('['):
+                        services = json.loads(output)
+                    else:
+                        # Handle newline-separated JSON objects
+                        services = [json.loads(line) for line in output.split('\n') if line.strip()]
+                except json.JSONDecodeError:
+                    pytest.skip("Could not parse docker compose output")
+                    return
+
+                if not services:
+                    pytest.skip("No Docker services running")
+                    return
+
+                # Check each service
+                for service in services:
+                    state = service.get("State", "").lower()
+                    name = service.get("Name", "unknown")
+                    assert state in ["running", "healthy"], \
+                        f"Service {name} not healthy: {state}"
+            else:
+                pytest.skip("No Docker services running")
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pytest.skip("Docker not available")

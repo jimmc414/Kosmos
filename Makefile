@@ -1,4 +1,4 @@
-.PHONY: help install setup-docker setup-neo4j setup-env start stop restart status verify clean test lint format
+.PHONY: help install setup-docker setup-neo4j setup-env start stop restart status verify clean test test-e2e test-smoke test-e2e-quick lint format
 
 # Default target
 help:
@@ -121,6 +121,18 @@ test-cov:
 	@echo "🧪 Running tests with coverage..."
 	@pytest tests/ --cov=kosmos --cov-report=html --cov-report=term
 	@echo "📄 Coverage report generated in htmlcov/index.html"
+
+test-e2e:
+	@echo "🧪 Running E2E tests..."
+	@pytest tests/e2e/ -v --no-cov
+
+test-smoke:
+	@echo "🧪 Running smoke tests..."
+	@pytest tests/e2e/ -m smoke -v --no-cov
+
+test-e2e-quick:
+	@echo "🧪 Running quick E2E tests (excluding slow)..."
+	@pytest tests/e2e/ -m "not slow" -v --no-cov
 
 lint:
 	@echo "🔍 Running linters..."
