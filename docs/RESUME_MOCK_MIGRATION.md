@@ -7,24 +7,21 @@ Converting mock-based tests to real LLM API calls for production readiness.
 - **Phase 1: Core LLM tests** - 43 tests pass with real APIs
 
 ## Current Status
-Ready to continue. Most tests only need Anthropic/DeepSeek keys (which are configured).
-
-## Deferred (Waiting for Semantic Scholar API Key)
-- `tests/unit/agents/test_hypothesis_generator.py` - Uses literature search
+Ready to continue with ALL tests. Semantic Scholar API works unauthenticated (lower rate limits).
 
 ## Resume Task: Phase 2 - Knowledge Layer
 
-### Files to Convert (No Semantic Scholar needed)
+### Files to Convert
 1. `tests/unit/knowledge/test_embeddings.py` - SentenceTransformer
 2. `tests/unit/knowledge/test_concept_extractor.py` - Claude API
 3. `tests/unit/knowledge/test_vector_db.py` - ChromaDB
 4. `tests/unit/knowledge/test_graph.py` - Neo4j
 
-### Then Phase 3 - Agents (1 deferred)
+### Then Phase 3 - Agents
 1. `tests/unit/agents/test_research_director.py` - Claude API
 2. `tests/unit/agents/test_literature_analyzer.py` - Claude API + Neo4j
 3. `tests/unit/agents/test_data_analyst.py` - Claude API
-4. ~~`tests/unit/agents/test_hypothesis_generator.py`~~ - DEFERRED (needs Semantic Scholar)
+4. `tests/unit/agents/test_hypothesis_generator.py` - Claude + Semantic Scholar (unauthenticated OK)
 
 ### Pattern
 ```python
@@ -49,3 +46,6 @@ def unique_prompt(base: str) -> str:
 ```bash
 pytest tests/unit/knowledge/ -v --no-cov
 ```
+
+## Note on Semantic Scholar
+Works without API key (just lower rate limits). When key arrives, add to .env for higher limits.
