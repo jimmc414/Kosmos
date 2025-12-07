@@ -84,14 +84,8 @@ class TestLiteratureAnalyzerInit:
 class TestPaperSummarization:
     """Test paper summarization with real Claude."""
 
-    @pytest.mark.skip(reason="BUG: Agent passes max_tokens to generate_structured which ClaudeClient doesn't accept")
     def test_summarize_paper(self, literature_analyzer, sample_paper):
-        """Test summarizing a paper with real Claude.
-
-        KNOWN BUG: LiteratureAnalyzerAgent.summarize_paper() passes max_tokens=2048
-        to generate_structured(), but ClaudeClient.generate_structured() doesn't
-        accept that parameter. Fix needed in literature_analyzer.py:265-270.
-        """
+        """Test summarizing a paper with real Claude."""
         analysis = literature_analyzer.summarize_paper(sample_paper)
 
         assert isinstance(analysis, PaperAnalysis)
@@ -99,7 +93,6 @@ class TestPaperSummarization:
         assert isinstance(analysis.key_findings, list)
         assert 0 <= analysis.confidence_score <= 1
 
-    @pytest.mark.skip(reason="BUG: Agent passes max_tokens to generate_structured which ClaudeClient doesn't accept")
     def test_summarize_paper_with_minimal_abstract(self, literature_analyzer):
         """Test summarizing paper with minimal abstract."""
         paper = PaperMetadata(
@@ -173,7 +166,6 @@ class TestAgentLifecycle:
 
         assert literature_analyzer.status == "stopped"
 
-    @pytest.mark.skip(reason="BUG: Depends on summarize_paper which has interface mismatch")
     def test_agent_execute_summarize(self, literature_analyzer, sample_paper):
         """Test agent execute method with summarize_paper task."""
         task = {
@@ -193,15 +185,8 @@ class TestAgentLifecycle:
 class TestLiteratureAnalyzerIntegration:
     """Integration tests with real services."""
 
-    @pytest.mark.skip(reason="BUG: Agent passes max_tokens to generate_structured which ClaudeClient doesn't accept")
     def test_real_paper_summarization(self, sample_paper):
-        """Test real paper summarization with Claude.
-
-        KNOWN BUG: LiteratureAnalyzerAgent.summarize_paper() has interface mismatches:
-        1. Passes max_tokens to generate_structured (not accepted by ClaudeClient)
-        2. Provider system uses 'schema' param but agent uses 'output_schema'
-        Fix needed in literature_analyzer.py:265-270.
-        """
+        """Test real paper summarization with Claude."""
         # Use legacy ClaudeClient to avoid provider interface mismatch
         with patch('kosmos.agents.literature_analyzer.get_client') as mock_get_client:
             from kosmos.core.llm import ClaudeClient

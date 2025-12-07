@@ -266,7 +266,7 @@ class LiteratureAnalyzerAgent(BaseAgent):
                 prompt=prompt,
                 output_schema=self._get_summarization_schema(),
                 system="You are an expert scientific literature analyst. Provide thorough, accurate analysis.",
-                max_tokens=2048
+                max_tokens=4096
             )
 
             result = PaperAnalysis(

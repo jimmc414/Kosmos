@@ -5,45 +5,37 @@
 ## Overall Progress
 - **Phase 1**: Core LLM Tests - 43 tests ✓
 - **Phase 2**: Knowledge Layer Tests - 57 tests ✓
-- **Phase 3**: Agent Tests - 124 tests (4 skipped) ✓
+- **Phase 3**: Agent Tests - 128 tests ✓ (bugs fixed)
 - **Phase 4**: Integration Tests - Pending
 
-**Total Converted: 224 tests**
+**Total Converted: 228 tests**
 
 ---
 
-## Phase 3 Complete: Agent Tests
+## Phase 3 Complete: Agent Tests (Bugs Fixed)
 
 ### Summary
-Converted 4 agent test files from mock-based to real Claude API calls. 124 tests pass, 4 skipped due to documented bugs.
+Converted 4 agent test files from mock-based to real Claude API calls. All 128 tests pass.
 
 | File | Tests | Service | Notes |
 |------|-------|---------|-------|
 | `tests/unit/agents/test_data_analyst.py` | 24 | Claude Haiku | Pure Python logic + LLM |
 | `tests/unit/agents/test_research_director.py` | 36 | Claude Haiku | Workflow + planning |
 | `tests/unit/agents/test_hypothesis_generator.py` | 19 | Claude Haiku | Generation + DB mocks |
-| `tests/unit/agents/test_literature_analyzer.py` | 6 (4 skipped) | Claude Haiku | Interface bugs |
+| `tests/unit/agents/test_literature_analyzer.py` | 10 | Claude Haiku | All tests pass |
 | `tests/unit/agents/test_skill_loader.py` | 39 | None (pure Python) | Already passing |
 
-### Known Bugs Discovered (must fix before Phase 4)
+### Bugs Fixed
 
-#### Bug 1: `generate_structured` max_tokens parameter
-- **File:** `kosmos/agents/literature_analyzer.py:265-270`
-- **Issue:** Passes `max_tokens=2048` to `generate_structured()` but `ClaudeClient.generate_structured()` doesn't accept this parameter
-- **Fix:** Either remove `max_tokens` or add it to `ClaudeClient.generate_structured()`
+#### Bug 1: `generate_structured` max_tokens parameter ✓
+- **File:** `kosmos/core/llm.py:409-417`
+- **Fix:** Added `max_tokens`, `temperature`, and `max_retries` parameters to `ClaudeClient.generate_structured()`
+- **Enhancement:** Added retry logic for flaky JSON generation (Haiku sometimes truncates responses)
 
-#### Bug 2: Provider parameter name mismatch
-- **Files:**
-  - `kosmos/core/llm.py:403-408` - ClaudeClient uses `output_schema`
-  - `kosmos/core/providers/openai.py:449-456` - LiteLLMProvider uses `schema`
-- **Issue:** Different parameter names break agent code when switching providers
-- **Fix:** Standardize on `output_schema` across all providers
-
-#### Skipped Tests (unskip after fixing bugs)
-- `tests/unit/agents/test_literature_analyzer.py:87` - `test_summarize_paper`
-- `tests/unit/agents/test_literature_analyzer.py:102` - `test_summarize_paper_with_minimal_abstract`
-- `tests/unit/agents/test_literature_analyzer.py:176` - `test_agent_execute_summarize`
-- `tests/unit/agents/test_literature_analyzer.py:196` - `test_real_paper_summarization`
+#### Bug 2: JSON reliability improvements ✓
+- **Fix:** Added `temperature=0.3` default for structured output (more deterministic)
+- **Fix:** Added `max_retries=2` with cache bypass on retries
+- **Fix:** Added explicit JSON completion instructions in system prompt
 
 ### Key Patterns Used
 - `unique_id()` helper for test isolation
@@ -116,9 +108,7 @@ def unique_prompt(base: str) -> str:
 
 ---
 
-## Remaining Phases
-
-### Phase 4: Integration Tests (4 files)
+## Next Phase: Phase 4 - Integration Tests (4 files)
 | File | Dependencies |
 |------|--------------|
 | `tests/integration/test_analysis_pipeline.py` | All services |
@@ -138,7 +128,7 @@ pytest tests/unit/core/test_llm.py tests/unit/core/test_async_llm.py tests/unit/
 pytest tests/unit/knowledge/test_embeddings.py tests/unit/knowledge/test_concept_extractor.py -v --no-cov
 pytest tests/unit/knowledge/test_vector_db.py tests/unit/knowledge/test_graph.py -v --no-cov
 
-# Phase 3 - Agent Tests (124 passed, 4 skipped)
+# Phase 3 - Agent Tests (128 tests)
 pytest tests/unit/agents/ -v --no-cov
 ```
 

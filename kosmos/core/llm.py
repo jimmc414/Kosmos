@@ -322,6 +322,12 @@ class ClaudeClient:
                 if hasattr(response.usage, 'output_tokens'):
                     self.total_output_tokens += response.usage.output_tokens
 
+            # Log stop reason for debugging
+            stop_reason = getattr(response, 'stop_reason', 'unknown')
+            logger.debug(f"Claude response stop_reason: {stop_reason}")
+            if stop_reason == 'max_tokens':
+                logger.warning(f"Response hit max_tokens limit ({max_tokens or self.max_tokens})")
+
             # Extract text
             text = response.content[0].text
 
@@ -405,6 +411,9 @@ class ClaudeClient:
         prompt: str,
         output_schema: Dict[str, Any],
         system: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+        max_retries: int = 2,
     ) -> Dict[str, Any]:
         """
         Generate structured output (JSON) from Claude.
@@ -413,6 +422,9 @@ class ClaudeClient:
             prompt: The user prompt
             output_schema: JSON schema describing expected output structure
             system: Optional system prompt
+            max_tokens: Maximum tokens for response (default 4096)
+            temperature: Sampling temperature (default 0.3 for deterministic output)
+            max_retries: Number of retries on JSON parse failure (default 2)
 
         Returns:
             dict: Parsed JSON response
@@ -434,25 +446,36 @@ class ClaudeClient:
         """
         # Add JSON instruction to system prompt
         json_system = (system or "") + "\n\nYou must respond with valid JSON matching this schema:\n" + json.dumps(output_schema, indent=2)
+        json_system += "\n\nIMPORTANT: Return ONLY valid, complete JSON. Ensure all brackets are closed."
 
-        response_text = self.generate(
-            prompt=prompt,
-            system=json_system,
-        )
-
-        # Parse JSON with robust fallback strategies
-        try:
-            return parse_json_response(response_text, schema=output_schema)
-        except JSONParseError as e:
-            logger.error(f"Failed to parse JSON after {e.attempts} attempts")
-            logger.error(f"Response text: {response_text[:500]}")
-            # JSON parse errors are NOT recoverable - retrying won't help
-            raise ProviderAPIError(
-                "claude",
-                f"Invalid JSON response: {e.message}",
-                raw_error=e,
-                recoverable=False
+        last_error = None
+        for attempt in range(max_retries + 1):
+            response_text = self.generate(
+                prompt=prompt,
+                system=json_system,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                bypass_cache=attempt > 0,  # Bypass cache on retries
             )
+
+            # Parse JSON with robust fallback strategies
+            try:
+                return parse_json_response(response_text, schema=output_schema)
+            except JSONParseError as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning(f"JSON parse failed (attempt {attempt + 1}/{max_retries + 1}), retrying...")
+                else:
+                    logger.error(f"Failed to parse JSON after {e.attempts} strategies and {max_retries + 1} API calls")
+                    logger.error(f"Response text: {response_text[:500]}")
+
+        # All retries exhausted
+        raise ProviderAPIError(
+            "claude",
+            f"Invalid JSON response: {last_error.message}",
+            raw_error=last_error,
+            recoverable=False
+        )
 
     def get_usage_stats(self) -> Dict[str, Any]:
         """
