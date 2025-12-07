@@ -3,7 +3,8 @@ arXiv API client for searching and retrieving scientific papers.
 
 Uses the official arxiv Python package with caching support.
 Note: The arxiv package may have compatibility issues with Python 3.11+
-due to sgmllib3k dependency. This module includes fallback handling.
+due to sgmllib3k dependency. This module automatically falls back to
+ArxivHTTPClient which uses direct HTTP API calls without the problematic dependency.
 """
 
 from typing import List, Optional
@@ -17,10 +18,9 @@ try:
 except ImportError as e:
     HAS_ARXIV = False
     arxiv = None
-    logging.warning(
+    logging.info(
         f"arxiv package not available: {e}. "
-        "arXiv search functionality will be limited. "
-        "Consider using Semantic Scholar as an alternative."
+        "Using ArxivHTTPClient as fallback (Python 3.11+ compatible)."
     )
 
 from kosmos.literature.base_client import (
@@ -37,8 +37,11 @@ class ArxivClient(BaseLiteratureClient):
     """
     Client for interacting with the arXiv API.
 
-    Uses the official arxiv Python package:
-    https://github.com/lukasschwab/arxiv.py
+    Uses the official arxiv Python package when available, with automatic
+    fallback to ArxivHTTPClient for Python 3.11+ compatibility.
+
+    The fallback client uses direct HTTP API calls without the sgmllib3k
+    dependency that causes issues on Python 3.11+.
     """
 
     def __init__(self, api_key: Optional[str] = None, cache_enabled: bool = True):
@@ -48,22 +51,36 @@ class ArxivClient(BaseLiteratureClient):
         Args:
             api_key: Not used for arXiv (public API), kept for interface consistency
             cache_enabled: Whether to enable caching for API responses
-
-        Raises:
-            RuntimeError: If arxiv package is not available
         """
         super().__init__(api_key=api_key, cache_enabled=cache_enabled)
 
-        # Check if arxiv is available
+        # Track whether we're using fallback
+        self._using_fallback = False
+        self._fallback_client = None
+
+        # Check if arxiv is available, use HTTP fallback if not
         if not HAS_ARXIV:
-            self.logger.warning(
-                "arxiv package not available. ArxivClient will return empty results. "
-                "Use SemanticScholarClient as an alternative."
+            self.logger.info(
+                "arxiv package not available, using ArxivHTTPClient fallback"
             )
-            self.client = None
-            self.max_results = 10
-            self.cache = None
-            return
+            self._using_fallback = True
+            try:
+                from kosmos.literature.arxiv_http_client import ArxivHTTPClient
+                self._fallback_client = ArxivHTTPClient(
+                    api_key=api_key,
+                    cache_enabled=cache_enabled
+                )
+                self.client = None
+                self.max_results = 100
+                self.cache = None
+                self.logger.info("ArxivHTTPClient fallback initialized successfully")
+                return
+            except Exception as e:
+                self.logger.error(f"Failed to initialize ArxivHTTPClient fallback: {e}")
+                self.client = None
+                self.max_results = 10
+                self.cache = None
+                return
 
         # Get configuration
         config = get_config()
@@ -79,7 +96,7 @@ class ArxivClient(BaseLiteratureClient):
             num_retries=3
         )
 
-        self.logger.info("Initialized arXiv client")
+        self.logger.info("Initialized arXiv client (using official arxiv package)")
 
     def search(
         self,
@@ -123,9 +140,20 @@ class ArxivClient(BaseLiteratureClient):
         if not self._validate_query(query):
             return []
 
-        # Return empty if arxiv not available
+        # Use fallback client if available
+        if self._using_fallback and self._fallback_client:
+            return self._fallback_client.search(
+                query=query,
+                max_results=max_results,
+                fields=fields,
+                year_from=year_from,
+                year_to=year_to,
+                **kwargs
+            )
+
+        # Return empty if arxiv not available and no fallback
         if not HAS_ARXIV or self.client is None:
-            self.logger.warning("arxiv package not available, returning empty results")
+            self.logger.warning("arxiv package not available and no fallback, returning empty results")
             return []
 
         # Check cache
@@ -193,9 +221,13 @@ class ArxivClient(BaseLiteratureClient):
         # Remove "arXiv:" prefix if present
         paper_id = paper_id.replace("arXiv:", "").strip()
 
-        # Return None if arxiv not available
+        # Use fallback client if available
+        if self._using_fallback and self._fallback_client:
+            return self._fallback_client.get_paper_by_id(paper_id)
+
+        # Return None if arxiv not available and no fallback
         if not HAS_ARXIV or self.client is None:
-            self.logger.warning("arxiv package not available, cannot retrieve paper")
+            self.logger.warning("arxiv package not available and no fallback, cannot retrieve paper")
             return None
 
         # Check cache

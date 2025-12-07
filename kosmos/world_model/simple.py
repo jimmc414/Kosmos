@@ -828,14 +828,74 @@ class Neo4jWorldModel(WorldModelStorage, EntityManager):
         project_results = self.graph.graph.run(cypher_projects).data()
         projects = [row["project"] for row in project_results]
 
+        # Query Neo4j database storage size
+        storage_size_mb = self._get_neo4j_storage_size()
+
         return {
             "entity_count": entity_count,
             "relationship_count": relationship_count,
             "entity_types": entity_types,
             "relationship_types": relationship_types,
             "projects": projects,
-            "storage_size_mb": 0,  # TODO: Query Neo4j database size
+            "storage_size_mb": storage_size_mb,
         }
+
+    def _get_neo4j_storage_size(self) -> float:
+        """
+        Query Neo4j database storage size in MB.
+
+        Attempts multiple methods to get the storage size:
+        1. APOC monitor.store() procedure (if APOC is installed)
+        2. Database statistics (Neo4j 4.x+)
+        3. Estimation based on entity/relationship counts
+
+        Returns:
+            Storage size in MB, or 0.0 if unable to determine
+        """
+        try:
+            # Method 1: Try APOC procedure (most accurate)
+            try:
+                cypher_apoc = "CALL apoc.monitor.store() YIELD totalStoreSize RETURN totalStoreSize"
+                result = self.graph.graph.run(cypher_apoc).data()
+                if result and "totalStoreSize" in result[0]:
+                    size_bytes = result[0]["totalStoreSize"]
+                    return round(size_bytes / (1024 * 1024), 2)
+            except Exception:
+                pass  # APOC not available
+
+            # Method 2: Try db.stats (Neo4j 4.x+)
+            try:
+                cypher_stats = "CALL db.stats.retrieve('GRAPH COUNTS') YIELD data RETURN data"
+                result = self.graph.graph.run(cypher_stats).data()
+                if result:
+                    # Stats available but don't include exact size
+                    # Fall through to estimation
+                    pass
+            except Exception:
+                pass  # db.stats not available
+
+            # Method 3: Estimate based on counts
+            # Average node size: ~500 bytes, Average relationship: ~200 bytes
+            try:
+                cypher_counts = """
+                MATCH (n) WITH count(n) as nodes
+                MATCH ()-[r]->() WITH nodes, count(r) as rels
+                RETURN nodes, rels
+                """
+                result = self.graph.graph.run(cypher_counts).data()
+                if result:
+                    nodes = result[0].get("nodes", 0)
+                    rels = result[0].get("rels", 0)
+                    # Estimate: 500 bytes/node + 200 bytes/relationship + 20% overhead
+                    estimated_bytes = (nodes * 500 + rels * 200) * 1.2
+                    return round(estimated_bytes / (1024 * 1024), 2)
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.debug(f"Could not determine Neo4j storage size: {e}")
+
+        return 0.0
 
     def reset(self, project: Optional[str] = None) -> None:
         """
