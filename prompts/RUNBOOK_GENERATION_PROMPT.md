@@ -1,6 +1,6 @@
 # Kosmos Operational Runbook Generation
 
-You are tasked with creating a comprehensive operational runbook for the Kosmos autonomous AI scientist system. This runbook will be used for E2E testing and creating a Claude Code skill.
+You are tasked with creating a comprehensive operational runbook for the Kosmos autonomous AI scientist system. This runbook will be used for E2E testing and operational documentation.
 
 ## Your Context
 
@@ -207,7 +207,7 @@ The runbook is complete when:
 2. Each component has clear inputs/outputs/success criteria
 3. All validation checkpoints are defined
 4. Known failure modes have troubleshooting steps
-5. The document can serve as a Claude Code skill reference
+5. The document can serve as an operational reference
 6. **Paper vs. implementation gaps are documented**
 7. **No implicit assumptions remain undocumented**
 
