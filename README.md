@@ -270,7 +270,7 @@ kosmos/
 |----------|------------|-------------|
 | Production-ready | 90% | Core research loop, agents, LLM providers, validation |
 | Deferred | 5% | Phase 4 production mode (polyglot persistence) |
-| Known issues | 5% | R language not supported (Python only) |
+| Known issues | 5% | Some environment-dependent tests skip |
 
 ### Fixed Issues (Recent)
 
@@ -280,16 +280,18 @@ kosmos/
 | [#67](https://github.com/jimmc414/Kosmos/issues/67) | SkillLoader domain mapping | ✅ Fixed |
 | [#68](https://github.com/jimmc414/Kosmos/issues/68) | Pydantic V2 migration | ✅ Fixed |
 | [#54-#58](https://github.com/jimmc414/Kosmos/issues/54) | Critical paper gaps | ✅ Fixed |
+| [#59](https://github.com/jimmc414/Kosmos/issues/59) | h5ad/Parquet data formats | ✅ Fixed |
+| [#69](https://github.com/jimmc414/Kosmos/issues/69) | R language execution | ✅ Fixed |
 
 ### Remaining Gaps
 
 | Priority | Count | Status |
 |----------|-------|--------|
-| High | 5 | #59, #60, #61, #69, #70 |
+| High | 3 | #60, #61, #70 |
 | Medium | 2 | #62, #63 |
 | Low | 2 | #64, #65 |
 
-Full tracking: [PAPER_IMPLEMENTATION_GAPS.md](docs/PAPER_IMPLEMENTATION_GAPS.md) (8/17 gaps complete)
+Full tracking: [PAPER_IMPLEMENTATION_GAPS.md](docs/PAPER_IMPLEMENTATION_GAPS.md) (10/17 gaps complete)
 
 ### Test Coverage
 
@@ -324,7 +326,7 @@ The system is suitable for experimentation and further development. Before produ
 
 2. **Neo4j optional**: Knowledge graph features require Neo4j. Set `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` to enable.
 
-3. **Python only**: The paper references R packages (MendelianRandomization, susieR). This implementation is Python-only.
+3. **R support via Docker**: R language execution requires the R-enabled Docker image (`docker/sandbox/Dockerfile.r`) with TwoSampleMR, susieR, and MendelianRandomization packages.
 
 4. **Single-user**: No multi-tenancy or user isolation.
 
