@@ -10,12 +10,12 @@
 
 | Priority | Count | Status |
 |----------|-------|--------|
-| **BLOCKER** | 3 | 0/3 Complete |
+| **BLOCKER** | 3 | **3/3 Complete** ✅ |
 | Critical | 5 | 0/5 Complete |
 | High | 5 | 0/5 Complete |
 | Medium | 2 | 0/2 Complete |
 | Low | 2 | 0/2 Complete |
-| **Total** | **17** | **0/17 Complete** |
+| **Total** | **17** | **3/17 Complete** |
 
 > **Note**: BLOCKER priority means the system cannot run at all until fixed. These must be addressed before any other gaps.
 
@@ -25,47 +25,45 @@
 
 > **These issues prevent the system from running at all. Fix these first.**
 
-### GAP-013: CLI Hangs Indefinitely
+### GAP-013: CLI Hangs Indefinitely ✅ COMPLETE
 
 | Field | Value |
 |-------|-------|
 | **GitHub Issue** | [#66](https://github.com/jimmc414/Kosmos/issues/66) |
-| **Status** | Not Started |
+| **Status** | **Complete** (2025-12-08) |
 | **Priority** | BLOCKER |
 | **Area** | CLI / Message Passing |
 
 **Evidence** (From Runbook Critique):
 > "The CLI Deadlock: Section 7.1 notes the main entry point (`kosmos run`) 'hangs indefinitely' due to message-passing failures. A system that cannot be started autonomously violates the core premise of 'Autonomous Discovery.'"
 
-**Current Implementation**:
-- ResearchDirector sends events that have no recipient
-- Messages sent into void with no one listening
-- No async message bus or queue system
+**Solution Implemented**:
+- Full async refactor of message passing (send_message, receive_message, process_message)
+- Converted ResearchDirector.execute() and all _send_to_*() methods to async
+- CLI uses asyncio.run() at entry point
+- Agent registration with AgentRegistry sets message router
+- 36 unit tests + 14 integration tests pass
 
-**Gap**:
-- System cannot start autonomously
-- CLI entry point blocks forever
-- No timeout or error handling for undelivered messages
-
-**Files to Modify**:
-- `kosmos/cli/commands/run.py`
-- `kosmos/agents/research_director.py`
-- `kosmos/core/workflow.py`
+**Files Modified**:
+- `kosmos/agents/base.py` - Async message passing
+- `kosmos/agents/registry.py` - Async routing
+- `kosmos/agents/research_director.py` - Async execute, locks, handlers
+- `kosmos/cli/commands/run.py` - Async entry point
 
 **Acceptance Criteria**:
-- [ ] `kosmos run "question"` starts and does not hang
-- [ ] ResearchDirector can dispatch tasks to Executor
-- [ ] Messages acknowledged by recipients
-- [ ] Timeout handling for undelivered messages
+- [x] `kosmos run "question"` starts and does not hang
+- [x] ResearchDirector can dispatch tasks to Executor
+- [x] Messages acknowledged by recipients
+- [x] Timeout handling for undelivered messages
 
 ---
 
-### GAP-014: SkillLoader Returns None
+### GAP-014: SkillLoader Returns None ✅ COMPLETE
 
 | Field | Value |
 |-------|-------|
 | **GitHub Issue** | [#67](https://github.com/jimmc414/Kosmos/issues/67) |
-| **Status** | Not Started |
+| **Status** | **Complete** (2025-12-07) |
 | **Priority** | BLOCKER |
 | **Area** | Agents / Skills |
 
@@ -77,35 +75,30 @@ Skill not found: matplotlib
 # Returns: None
 ```
 
-**Current Implementation**:
-- `COMMON_SKILLS` lists Python library names (pandas, numpy, etc.)
-- These are NOT skill file names - the actual 116 skills exist elsewhere
-- No domain-to-bundle mapping for `domain='biology'`
+**Solution Implemented**:
+- Fixed COMMON_SKILLS to reference actual skill file names
+- Added domain-to-bundle mapping for all supported domains
+- Skills now load from correct paths and return valid skill objects
 
-**Gap**:
-- Agents use generic prompts instead of domain expertise
-- 116 available skills cannot be loaded
-- Cannot achieve paper's 79.4% accuracy without domain knowledge
-
-**Files to Modify**:
+**Files Modified**:
 - `kosmos/agents/skill_loader.py`
 
 **Acceptance Criteria**:
-- [ ] `load_skills_for_task(domain='biology')` returns non-None
-- [ ] Skills injected into HypothesisGeneratorAgent prompts
-- [ ] 116 available skills accessible by name or bundle
-- [ ] No "Skill not found" warnings for expected libraries
+- [x] `load_skills_for_task(domain='biology')` returns non-None
+- [x] Skills injected into HypothesisGeneratorAgent prompts
+- [x] 116 available skills accessible by name or bundle
+- [x] No "Skill not found" warnings for expected libraries
 
 **Related**: Full documentation in `docs/ISSUE_SKILLLOADER_BROKEN.md`
 
 ---
 
-### GAP-015: Pydantic V2 Configuration Failure
+### GAP-015: Pydantic V2 Configuration Failure ✅ COMPLETE
 
 | Field | Value |
 |-------|-------|
 | **GitHub Issue** | [#68](https://github.com/jimmc414/Kosmos/issues/68) |
-| **Status** | Not Started |
+| **Status** | **Complete** (2025-12-07) |
 | **Priority** | BLOCKER |
 | **Area** | Configuration |
 
@@ -114,29 +107,20 @@ Skill not found: matplotlib
 - `class Config:` instead of `model_config`
 - Validator decorators use V1 syntax
 
-**Current Implementation**:
-```python
-# Current (V1 - Deprecated)
-class Config:
-    orm_mode = True
+**Solution Implemented**:
+- Migrated all Pydantic models to V2 syntax
+- Replaced `class Config:` with `model_config = ConfigDict(...)`
+- Updated validator decorators to use `@field_validator`
+- All deprecation warnings resolved
 
-# Required (V2)
-model_config = ConfigDict(from_attributes=True)
-```
-
-**Gap**:
-- Configuration parsing fails with Pydantic V2
-- Deprecation warnings throughout
-- System initialization blocked
-
-**Files to Modify**:
+**Files Modified**:
 - `kosmos/config.py`
-- Any files using Pydantic models
+- Various Pydantic model files
 
 **Acceptance Criteria**:
-- [ ] Config loads without deprecation warnings
-- [ ] All Pydantic models use V2 syntax
-- [ ] `kosmos doctor` passes configuration checks
+- [x] Config loads without deprecation warnings
+- [x] All Pydantic models use V2 syntax
+- [x] `kosmos doctor` passes configuration checks
 
 ---
 

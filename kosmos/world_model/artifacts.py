@@ -28,9 +28,23 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+class UpdateType(str, Enum):
+    """
+    World Model update categories (Issue #55).
+
+    Paper Claim: "The World Model integrates findings using three categories:
+    Confirmation (data supports hypothesis), Conflict (data contradicts literature),
+    Pruning (hypothesis refuted)"
+    """
+    CONFIRMATION = "confirmation"  # Data supports hypothesis
+    CONFLICT = "conflict"          # Data contradicts existing evidence
+    PRUNING = "pruning"            # Hypothesis refuted
 
 
 @dataclass
@@ -49,6 +63,9 @@ class Finding:
     scholar_eval: Optional[Dict] = None
     metadata: Optional[Dict] = None
     timestamp: Optional[str] = None
+    hypothesis_id: Optional[str] = None  # Issue #55: Link finding to hypothesis
+    refutes_hypothesis: bool = False  # Issue #55: Flag for hypothesis refutation
+    confidence: float = 0.5  # Issue #55: Confidence score for the finding
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""
@@ -83,6 +100,31 @@ class Hypothesis:
     def from_dict(cls, data: Dict) -> 'Hypothesis':
         """Create Hypothesis from dictionary."""
         return cls(**data)
+
+
+@dataclass
+class FindingIntegrationResult:
+    """
+    Result of integrating a finding into the world model (Issue #55).
+
+    Captures the update type (confirmation/conflict/pruning) and provides
+    reasoning for the categorization.
+    """
+    success: bool
+    update_type: UpdateType
+    affected_hypotheses: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    reasoning: str = ""
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "success": self.success,
+            "update_type": self.update_type.value,
+            "affected_hypotheses": self.affected_hypotheses,
+            "confidence": self.confidence,
+            "reasoning": self.reasoning
+        }
 
 
 class ArtifactStateManager:
@@ -501,34 +543,120 @@ class ArtifactStateManager:
         pass
 
     # ============================================================================
-    # Conflict Detection
+    # Conflict Detection (Issue #55)
     # ============================================================================
 
-    async def add_finding_with_conflict_check(self, finding: Dict) -> bool:
+    async def add_finding_with_conflict_check(
+        self, finding: Dict
+    ) -> FindingIntegrationResult:
         """
-        Add finding with automatic conflict detection.
+        Add finding with automatic conflict detection (Issue #55).
+
+        Implements the paper's three update categories:
+        - Confirmation: Data supports hypothesis
+        - Conflict: Data contradicts existing evidence
+        - Pruning: Hypothesis refuted
 
         Args:
-            finding: Finding dictionary
+            finding: Finding dictionary with keys:
+                - cycle, task_id: Location identifiers
+                - hypothesis_id: Optional linked hypothesis
+                - statistics: Dict with effect_size, p_value, etc.
+                - refutes_hypothesis: Optional bool flag
 
         Returns:
-            True if added successfully (no blocking conflicts)
+            FindingIntegrationResult with update_type and reasoning
         """
         # Save the finding
         cycle = finding.get('cycle', 0)
         task_id = finding.get('task_id', 0)
         await self.save_finding_artifact(cycle, task_id, finding)
 
-        # Check for contradictions with existing findings
-        # Simple implementation: Compare summaries for contradictory keywords
-        contradicts_existing = False
+        # Determine update type
+        update_type = UpdateType.CONFIRMATION
+        affected = []
+        reasoning = ""
 
-        # Future: More sophisticated conflict detection
-        # - Semantic similarity
-        # - Statistical contradiction (opposite effects)
-        # - Hypothesis contradiction
+        # Check for statistical contradictions
+        new_stats = finding.get('statistics', {})
+        existing_findings = await self._get_related_findings(finding)
 
-        return not contradicts_existing
+        for existing in existing_findings:
+            existing_stats = existing.get('statistics', {})
+
+            # Check effect direction contradiction
+            new_effect = new_stats.get('effect_size', 0)
+            old_effect = existing_stats.get('effect_size', 0)
+
+            # Non-zero effects with opposite signs indicate conflict
+            if new_effect != 0 and old_effect != 0 and (new_effect * old_effect < 0):
+                update_type = UpdateType.CONFLICT
+                reasoning = (
+                    f"Effect direction contradiction: new effect={new_effect:.3f} "
+                    f"vs existing effect={old_effect:.3f}"
+                )
+                logger.warning(f"[CONFLICT] {reasoning}")
+                break
+
+            # Check p-value contradiction (significant vs non-significant)
+            new_p = new_stats.get('p_value')
+            old_p = existing_stats.get('p_value')
+            if new_p is not None and old_p is not None:
+                new_sig = new_p < 0.05
+                old_sig = old_p < 0.05
+                if new_sig != old_sig:
+                    update_type = UpdateType.CONFLICT
+                    reasoning = (
+                        f"Significance contradiction: new p={new_p:.4f} "
+                        f"({'significant' if new_sig else 'non-significant'}) vs "
+                        f"existing p={old_p:.4f} "
+                        f"({'significant' if old_sig else 'non-significant'})"
+                    )
+                    logger.warning(f"[CONFLICT] {reasoning}")
+                    break
+
+        # Check for hypothesis refutation (pruning)
+        hypothesis_id = finding.get('hypothesis_id')
+        if hypothesis_id and finding.get('refutes_hypothesis', False):
+            update_type = UpdateType.PRUNING
+            affected.append(hypothesis_id)
+            reasoning = f"Hypothesis {hypothesis_id} refuted by experimental evidence"
+            logger.info(f"[PRUNING] {reasoning}")
+
+        # Log the categorization
+        if update_type == UpdateType.CONFIRMATION and not reasoning:
+            reasoning = "Finding supports existing hypotheses"
+            logger.debug(f"[CONFIRMATION] {reasoning}")
+
+        return FindingIntegrationResult(
+            success=True,
+            update_type=update_type,
+            affected_hypotheses=affected,
+            confidence=finding.get('confidence', 0.5),
+            reasoning=reasoning
+        )
+
+    async def _get_related_findings(self, finding: Dict) -> List[Dict]:
+        """
+        Get findings related to the same hypothesis or topic.
+
+        Args:
+            finding: The new finding to compare against
+
+        Returns:
+            List of related findings as dicts from cache
+        """
+        hypothesis_id = finding.get('hypothesis_id')
+        if not hypothesis_id:
+            return []
+
+        related = []
+        for fid, cached in self._findings_cache.items():
+            # Cache stores Finding objects, convert to dict for comparison
+            cached_hyp_id = cached.hypothesis_id if hasattr(cached, 'hypothesis_id') else None
+            if cached_hyp_id == hypothesis_id:
+                related.append(cached.to_dict() if hasattr(cached, 'to_dict') else cached)
+        return related
 
     # ============================================================================
     # Export/Import

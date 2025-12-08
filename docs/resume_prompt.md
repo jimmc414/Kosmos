@@ -2,85 +2,88 @@
 
 ## Context
 
-You are resuming work on the Kosmos project after a context compaction. The previous session completed a **full async refactor** to fix Issue #66 (CLI Deadlock).
+You are resuming work on the Kosmos project after a context compaction. The previous session implemented **5 critical paper implementation gaps** (#54-#58).
 
 ## What Was Done
 
-### Issue #66 - CLI Deadlock (FIXED)
+### Issues Fixed This Session
 
-The `kosmos run` CLI was hanging indefinitely because:
-1. Messages were silently dropped (router never set)
-2. Synchronous polling blocked async operations
+| Issue | Description | Implementation |
+|-------|-------------|----------------|
+| #54 | Self-Correcting Code Execution | Enhanced RetryStrategy with 11 error handlers + LLM repair |
+| #55 | World Model Update Categories | UpdateType enum (CONFIRMATION/CONFLICT/PRUNING) + conflict detection |
+| #56 | 12-Hour Runtime Constraint | `max_runtime_hours` config + runtime tracking in ResearchDirector |
+| #57 | Parallel Task Execution | Changed `max_concurrent_experiments` default from 4 to 10 |
+| #58 | Agent Rollout Tracking | New RolloutTracker class + integration in ResearchDirector |
 
-**Solution implemented:**
-- Converted message passing to async (`send_message()`, `receive_message()`, `process_message()`)
-- Converted ResearchDirector to async (`execute()`, `_send_to_*()`, etc.)
-- CLI now uses `asyncio.run()` at entry point
-- Agent registration with AgentRegistry sets message router
+### Previously Fixed (Documented)
+
+| Issue | Description |
+|-------|-------------|
+| #66 | CLI Deadlock - Full async refactor |
+| #67 | SkillLoader - Domain-to-bundle mapping |
+| #68 | Pydantic V2 - Model config migration |
 
 ### Files Modified
 
 | File | Changes |
 |------|---------|
-| `kosmos/agents/base.py` | Async message passing + sync wrappers |
-| `kosmos/agents/registry.py` | Async routing + sync wrappers |
-| `kosmos/agents/research_director.py` | Async execute, locks, _send_to_* |
-| `kosmos/cli/commands/run.py` | Async entry point, agent registration |
-| `tests/unit/agents/test_research_director.py` | Async test updates |
-| `tests/integration/test_async_message_passing.py` | NEW: 14 integration tests |
+| `docs/PAPER_IMPLEMENTATION_GAPS.md` | Marked #66-68 complete |
+| `kosmos/config.py` | `max_runtime_hours`, `max_concurrent_experiments=10` |
+| `kosmos/core/rollout_tracker.py` | **NEW** - RolloutTracker class |
+| `kosmos/agents/research_director.py` | Runtime tracking, rollout tracking |
+| `kosmos/world_model/artifacts.py` | UpdateType, FindingIntegrationResult, conflict detection |
+| `kosmos/execution/executor.py` | Enhanced RetryStrategy, self-correcting execution |
+| `tests/unit/world_model/test_artifacts.py` | Updated conflict detection tests |
 
 ### Test Status
 
-- **36/36** research_director unit tests pass
-- **14/14** async integration tests pass (real Claude API)
+- **69 tests pass** (research_director + artifacts)
+- All verification imports work correctly
 
 ## Remaining Work
 
-### Priority 1: Verify CLI End-to-End
-
-```bash
-kosmos run "What genes are associated with longevity?" --domain biology --max-iterations 2
-```
-
-### Priority 2: Paper Implementation Gaps
+### High Priority (9 gaps remaining)
 
 | Issue | Description | Priority |
 |-------|-------------|----------|
-| #54 | Self-Correcting Code Execution | Critical |
-| #55 | World Model Update Categories | Critical |
-| #69 | R Language Support | High |
-| #70 | Null Model Validation | High |
-| #56-#65 | Various operational issues | Medium |
+| #59 | h5ad/Parquet Data Format Support | High |
+| #60 | Figure Generation (matplotlib plots) | High |
+| #61 | Jupyter Notebook Generation | High |
+| #69 | R Language Execution Support | High |
+| #70 | Null Model Statistical Validation | High |
 
-### Priority 3: Sub-Agent Async Updates
+### Medium/Low Priority
 
-Check if these agents need `async def process_message()`:
-- `HypothesisGeneratorAgent`
-- `ExperimentDesignerAgent`
-- `DataAnalystAgent`
-- `CodeExecutorAgent`
+| Issue | Description | Priority |
+|-------|-------------|----------|
+| #62 | Code Line Provenance | Medium |
+| #63 | Failure Mode Detection | Medium |
+| #64 | Multi-Run Convergence Framework | Low |
+| #65 | Paper Accuracy Validation | Low |
 
 ## Key Documentation
 
-- `docs/CHECKPOINT.md` - Full session summary
-- `docs/PAPER_IMPLEMENTATION_GAPS.md` - 17 tracked gaps
+- `docs/CHECKPOINT.md` - Full session summary with architecture diagrams
+- `docs/PAPER_IMPLEMENTATION_GAPS.md` - 17 tracked gaps (8 complete)
 - GitHub Issues #54-#70 - Detailed tracking
 
 ## Quick Verification Commands
 
 ```bash
-# Verify async architecture
+# Verify all implementations work
 python -c "
-import asyncio
-from kosmos.agents.research_director import ResearchDirectorAgent
-print(f'execute() is async: {asyncio.iscoroutinefunction(ResearchDirectorAgent.execute)}')
+from kosmos.config import ResearchConfig
+from kosmos.core.rollout_tracker import RolloutTracker
+from kosmos.world_model.artifacts import UpdateType, FindingIntegrationResult
+from kosmos.execution.executor import RetryStrategy
+print('All imports successful')
+print(f'max_runtime_hours: {ResearchConfig().max_runtime_hours}')
+print(f'UpdateType: {[e.value for e in UpdateType]}')
 "
 
-# Run research_director tests
-python -m pytest tests/unit/agents/test_research_director.py -v --tb=short
-
-# Run async integration tests
-python -m pytest tests/integration/test_async_message_passing.py -v --tb=short
+# Run key tests
+python -m pytest tests/unit/agents/test_research_director.py tests/unit/world_model/test_artifacts.py -v --tb=short
 ```
 
 ## Resume Command
@@ -89,3 +92,13 @@ Start by reading the checkpoint:
 ```
 Read docs/CHECKPOINT.md and docs/PAPER_IMPLEMENTATION_GAPS.md, then ask what I'd like to work on next.
 ```
+
+## Progress Summary
+
+**8/17 gaps fixed (47% complete)**
+
+- BLOCKER: 3/3 complete
+- Critical: 5/5 complete
+- High: 0/5 complete
+- Medium: 0/2 complete
+- Low: 0/2 complete

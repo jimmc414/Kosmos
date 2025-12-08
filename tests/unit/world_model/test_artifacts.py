@@ -488,18 +488,70 @@ class TestArtifactStateManagerExport:
 
 
 class TestArtifactStateManagerConflictDetection:
-    """Tests for conflict detection."""
+    """Tests for conflict detection (Issue #55)."""
 
     @pytest.mark.asyncio
     async def test_add_finding_with_conflict_check(self, state_manager, sample_finding_dict):
         """Test adding finding with conflict detection."""
+        from kosmos.world_model.artifacts import UpdateType, FindingIntegrationResult
+
         result = await state_manager.add_finding_with_conflict_check(sample_finding_dict)
 
-        # Currently returns True (no sophisticated conflict detection yet)
-        assert result is True
+        # Now returns FindingIntegrationResult (Issue #55)
+        assert isinstance(result, FindingIntegrationResult)
+        assert result.success is True
+        assert result.update_type == UpdateType.CONFIRMATION
 
         # Finding should be saved
         assert 'cycle1_task1' in state_manager._findings_cache
+
+    @pytest.mark.asyncio
+    async def test_conflict_detection_opposite_effects(self, state_manager):
+        """Test conflict detection with opposite effect sizes."""
+        from kosmos.world_model.artifacts import UpdateType
+
+        # First finding with positive effect
+        finding1 = {
+            'finding_id': 'conflict_test_1',
+            'cycle': 1,
+            'task_id': 1,
+            'summary': 'Positive effect observed',
+            'statistics': {'effect_size': 0.5, 'p_value': 0.01},
+            'hypothesis_id': 'hyp-001'
+        }
+        result1 = await state_manager.add_finding_with_conflict_check(finding1)
+        assert result1.update_type == UpdateType.CONFIRMATION
+
+        # Second finding with negative effect (same hypothesis)
+        finding2 = {
+            'finding_id': 'conflict_test_2',
+            'cycle': 1,
+            'task_id': 2,
+            'summary': 'Negative effect observed',
+            'statistics': {'effect_size': -0.3, 'p_value': 0.02},
+            'hypothesis_id': 'hyp-001'
+        }
+        result2 = await state_manager.add_finding_with_conflict_check(finding2)
+        assert result2.update_type == UpdateType.CONFLICT
+        assert 'contradiction' in result2.reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_pruning_on_hypothesis_refutation(self, state_manager):
+        """Test pruning when hypothesis is refuted."""
+        from kosmos.world_model.artifacts import UpdateType
+
+        finding = {
+            'finding_id': 'prune_test',
+            'cycle': 1,
+            'task_id': 1,
+            'summary': 'Hypothesis refuted',
+            'statistics': {'effect_size': 0.0, 'p_value': 0.95},
+            'hypothesis_id': 'hyp-002',
+            'refutes_hypothesis': True
+        }
+        result = await state_manager.add_finding_with_conflict_check(finding)
+        assert result.update_type == UpdateType.PRUNING
+        assert 'hyp-002' in result.affected_hypotheses
 
 
 # ============================================================================

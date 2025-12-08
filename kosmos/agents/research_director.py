@@ -18,10 +18,12 @@ import logging
 import asyncio
 import concurrent.futures
 import threading
+import time
 from contextlib import contextmanager
 
 from kosmos.agents.base import BaseAgent, AgentMessage, MessageType, AgentStatus
 from kosmos.utils.compat import model_to_dict
+from kosmos.core.rollout_tracker import RolloutTracker
 from kosmos.core.workflow import (
     ResearchWorkflow,
     ResearchPlan,
@@ -96,6 +98,7 @@ class ResearchDirectorAgent(BaseAgent):
 
         # Configuration
         self.max_iterations = self.config.get("max_iterations", 10)
+        self.max_runtime_hours = self.config.get("max_runtime_hours", 12.0)  # Issue #56
         self.mandatory_stopping_criteria = self.config.get(
             "mandatory_stopping_criteria",
             ["iteration_limit", "no_testable_hypotheses"]
@@ -145,6 +148,9 @@ class ResearchDirectorAgent(BaseAgent):
             "literature_review": {"attempts": 0, "successes": 0, "cost": 0.0}
         }
 
+        # Agent rollout tracking (Issue #58)
+        self.rollout_tracker = RolloutTracker()
+
         # Research history
         self.iteration_history: List[Dict[str, Any]] = []
 
@@ -152,6 +158,9 @@ class ResearchDirectorAgent(BaseAgent):
         self._consecutive_errors: int = 0
         self._error_history: List[Dict[str, Any]] = []
         self._last_error_time: Optional[datetime] = None
+
+        # Runtime tracking (Issue #56)
+        self._start_time: Optional[float] = None
 
         # Async-safe locks for concurrent operations (Issue #66)
         # Note: asyncio.Lock is not reentrant, refactored to avoid nested acquisitions
@@ -284,11 +293,30 @@ class ResearchDirectorAgent(BaseAgent):
     def _on_start(self):
         """Initialize director when started."""
         logger.info(f"ResearchDirector {self.agent_id} starting research cycle")
+
+        # Start runtime tracking (Issue #56)
+        if self._start_time is None:
+            self._start_time = time.time()
+            logger.info(f"Research started at {datetime.now().isoformat()}, max runtime: {self.max_runtime_hours}h")
+
         with self._workflow_lock_sync:
             self.workflow.transition_to(
                 WorkflowState.GENERATING_HYPOTHESES,
                 action="Start research cycle"
             )
+
+    def _check_runtime_exceeded(self) -> bool:
+        """Check if research has exceeded maximum runtime (Issue #56)."""
+        if self._start_time is None:
+            return False
+        elapsed_hours = (time.time() - self._start_time) / 3600
+        return elapsed_hours >= self.max_runtime_hours
+
+    def get_elapsed_time_hours(self) -> float:
+        """Get elapsed research time in hours (Issue #56)."""
+        if self._start_time is None:
+            return 0.0
+        return (time.time() - self._start_time) / 3600
 
     def _on_stop(self):
         """Cleanup when stopped."""
@@ -1015,6 +1043,9 @@ class ResearchDirectorAgent(BaseAgent):
             "timestamp": datetime.utcnow()
         }
 
+        # Track rollout (Issue #58)
+        self.rollout_tracker.increment("hypothesis_generation")
+
         logger.debug(f"Sent {action} request to HypothesisGeneratorAgent")
         return message
 
@@ -1046,6 +1077,9 @@ class ResearchDirectorAgent(BaseAgent):
             "timestamp": datetime.utcnow()
         }
 
+        # Track rollout (Issue #58)
+        self.rollout_tracker.increment("experiment_design")
+
         logger.debug(f"Sent design request to ExperimentDesignerAgent for hypothesis {hypothesis_id}")
         return message
 
@@ -1074,6 +1108,9 @@ class ResearchDirectorAgent(BaseAgent):
             "protocol_id": protocol_id,
             "timestamp": datetime.utcnow()
         }
+
+        # Track rollout (Issue #58)
+        self.rollout_tracker.increment("code_execution")
 
         logger.debug(f"Sent execution request to Executor for protocol {protocol_id}")
         return message
@@ -1105,6 +1142,9 @@ class ResearchDirectorAgent(BaseAgent):
             "result_id": result_id,
             "timestamp": datetime.utcnow()
         }
+
+        # Track rollout (Issue #58)
+        self.rollout_tracker.increment("data_analysis")
 
         logger.debug(f"Sent interpretation request to DataAnalystAgent for result {result_id}")
         return message
@@ -1138,6 +1178,9 @@ class ResearchDirectorAgent(BaseAgent):
             "timestamp": datetime.utcnow()
         }
 
+        # Track rollout - refinement is part of hypothesis lifecycle (Issue #58)
+        self.rollout_tracker.increment("hypothesis_generation")
+
         logger.debug(f"Sent {action} request to HypothesisRefiner for hypothesis {hypothesis_id}")
         return message
 
@@ -1170,6 +1213,9 @@ class ResearchDirectorAgent(BaseAgent):
             "agent": "ConvergenceDetector",
             "timestamp": datetime.utcnow()
         }
+
+        # Track rollout - convergence often involves literature review (Issue #58)
+        self.rollout_tracker.increment("literature")
 
         logger.debug("Sent convergence check request to ConvergenceDetector")
         return message
@@ -1592,6 +1638,27 @@ Provide a structured, actionable plan in 2-3 paragraphs.
         except ImportError:
             # Metrics module not available - continue without enforcement
             logger.debug("Metrics module not available for budget check")
+
+        # Runtime limit check (Issue #56)
+        if self._check_runtime_exceeded():
+            elapsed = self.get_elapsed_time_hours()
+            logger.warning(
+                f"[RUNTIME] Research halted: {elapsed:.2f}h elapsed, limit {self.max_runtime_hours}h"
+            )
+
+            # Transition to CONVERGED state gracefully
+            with self._workflow_context():
+                self.workflow.transition_to(
+                    WorkflowState.CONVERGED,
+                    action="Runtime limit reached - research halted",
+                    metadata={
+                        "reason": "runtime_exceeded",
+                        "elapsed_hours": elapsed,
+                        "limit_hours": self.max_runtime_hours
+                    }
+                )
+
+            return NextAction.CONVERGE
 
         current_state = self.workflow.current_state
 
@@ -2048,6 +2115,8 @@ Provide a structured, actionable plan in 2-3 paragraphs.
             "workflow_state": self.workflow.current_state.value,
             "iteration": self.research_plan.iteration_count,
             "max_iterations": self.research_plan.max_iterations,
+            "elapsed_time_hours": self.get_elapsed_time_hours(),  # Issue #56
+            "max_runtime_hours": self.max_runtime_hours,  # Issue #56
             "has_converged": self.research_plan.has_converged,
             "convergence_reason": self.research_plan.convergence_reason,
             "hypothesis_pool_size": len(self.research_plan.hypothesis_pool),
@@ -2057,5 +2126,6 @@ Provide a structured, actionable plan in 2-3 paragraphs.
             "experiments_completed": len(self.research_plan.completed_experiments),
             "results_count": len(self.research_plan.results),
             "strategy_stats": self.strategy_stats,
+            "rollouts": self.rollout_tracker.to_dict(),  # Issue #58
             "agent_status": self.get_status()
         }

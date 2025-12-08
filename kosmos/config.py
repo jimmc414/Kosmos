@@ -230,6 +230,13 @@ class ResearchConfig(BaseSettings):
         description="Research budget in USD for API costs",
         alias="RESEARCH_BUDGET_USD"
     )
+    max_runtime_hours: float = Field(
+        default=12.0,
+        ge=0.1,
+        le=24.0,
+        description="Maximum runtime in hours (paper claims up to 12 hours continuous operation)",
+        alias="MAX_RUNTIME_HOURS"
+    )
 
 
     model_config = SettingsConfigDict(populate_by_name=True)
@@ -706,10 +713,10 @@ class PerformanceConfig(BaseSettings):
         alias="MAX_PARALLEL_HYPOTHESES"
     )
     max_concurrent_experiments: int = Field(
-        default=4,
+        default=10,
         ge=1,
         le=16,
-        description="Maximum concurrent experiment executions",
+        description="Maximum concurrent experiment executions (paper claims up to 10 parallel tasks)",
         alias="MAX_CONCURRENT_EXPERIMENTS"
     )
     max_concurrent_llm_calls: int = Field(

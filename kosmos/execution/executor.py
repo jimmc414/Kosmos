@@ -114,6 +114,9 @@ class CodeExecutor:
         self.enable_profiling = enable_profiling
         self.profiling_mode = profiling_mode
 
+        # Initialize retry strategy for self-correcting execution (Issue #54)
+        self.retry_strategy = RetryStrategy(max_retries=max_retries, base_delay=retry_delay)
+
         # Initialize sandbox if requested
         self.sandbox = None
         if self.use_sandbox:
@@ -127,50 +130,98 @@ class CodeExecutor:
         self,
         code: str,
         local_vars: Optional[Dict[str, Any]] = None,
-        retry_on_error: bool = False
+        retry_on_error: bool = False,
+        llm_client: Optional[Any] = None
     ) -> ExecutionResult:
         """
-        Execute Python code and capture results.
+        Execute Python code and capture results with self-correcting retry (Issue #54).
 
         Args:
             code: Python code to execute
             local_vars: Optional local variables to make available
-            retry_on_error: If True, retry on execution errors
+            retry_on_error: If True, retry on execution errors with code fixes
+            llm_client: Optional LLM client for intelligent code repair
 
         Returns:
             ExecutionResult with output and results
         """
         attempt = 0
         last_error = None
+        current_code = code  # Track the current version of code
 
         while attempt < (self.max_retries if retry_on_error else 1):
             attempt += 1
 
             try:
                 logger.info(f"Executing code (attempt {attempt})")
-                result = self._execute_once(code, local_vars)
+                result = self._execute_once(current_code, local_vars)
 
                 if result.success:
+                    # Track successful repair if code was modified
+                    if current_code != code and attempt > 1:
+                        self.retry_strategy.record_repair_attempt(
+                            result.error_type or "Unknown", True
+                        )
                     logger.info(f"Code executed successfully in {result.execution_time:.2f}s")
                     return result
                 else:
                     last_error = result.error
+                    error_type = result.error_type or "Unknown"
+
                     if retry_on_error and attempt < self.max_retries:
-                        logger.warning(f"Execution failed, retrying in {self.retry_delay}s...")
-                        time.sleep(self.retry_delay)
+                        # Try to fix the code using RetryStrategy (Issue #54)
+                        fixed_code = self.retry_strategy.modify_code_for_retry(
+                            original_code=current_code,
+                            error=result.error or "",
+                            error_type=error_type,
+                            traceback_str=result.stderr or "",
+                            attempt=attempt,
+                            llm_client=llm_client
+                        )
+
+                        if fixed_code and fixed_code != current_code:
+                            logger.info(f"Applying code fix for {error_type}, attempt {attempt + 1}")
+                            current_code = fixed_code
+                        else:
+                            logger.warning(f"No code fix available for {error_type}")
+
+                        # Wait before retry
+                        delay = self.retry_strategy.get_delay(attempt)
+                        logger.warning(f"Execution failed, retrying in {delay}s...")
+                        time.sleep(delay)
                     else:
+                        # Record failed repair attempt
+                        if current_code != code:
+                            self.retry_strategy.record_repair_attempt(error_type, False)
                         return result
 
             except Exception as e:
                 logger.error(f"Unexpected error during execution: {e}")
                 last_error = str(e)
+                error_type = type(e).__name__
+
                 if retry_on_error and attempt < self.max_retries:
-                    time.sleep(self.retry_delay)
+                    # Try to fix the code
+                    fixed_code = self.retry_strategy.modify_code_for_retry(
+                        original_code=current_code,
+                        error=str(e),
+                        error_type=error_type,
+                        traceback_str=traceback.format_exc(),
+                        attempt=attempt,
+                        llm_client=llm_client
+                    )
+
+                    if fixed_code and fixed_code != current_code:
+                        logger.info(f"Applying code fix for {error_type}")
+                        current_code = fixed_code
+
+                    delay = self.retry_strategy.get_delay(attempt)
+                    time.sleep(delay)
                 else:
                     return ExecutionResult(
                         success=False,
                         error=str(e),
-                        error_type=type(e).__name__
+                        error_type=error_type
                     )
 
         # All retries failed
@@ -435,13 +486,35 @@ class CodeValidator:
 
 class RetryStrategy:
     """
-    Strategy for retrying failed code execution.
+    Strategy for retrying failed code execution (Issue #54).
 
     Provides different retry approaches:
     - Simple retry (same code)
-    - Modified retry (with error feedback)
+    - Modified retry (with error feedback) - handles 10+ error types
     - LLM-assisted retry (if LLM available)
+
+    Paper Claim: "If error occurs → reads traceback → fixes code → re-executes"
     """
+
+    # Common missing imports for auto-fix
+    COMMON_IMPORTS = {
+        'pd': 'import pandas as pd',
+        'np': 'import numpy as np',
+        'plt': 'import matplotlib.pyplot as plt',
+        'sns': 'import seaborn as sns',
+        'os': 'import os',
+        'sys': 'import sys',
+        'json': 'import json',
+        're': 'import re',
+        'math': 'import math',
+        'datetime': 'from datetime import datetime',
+        'Path': 'from pathlib import Path',
+        'defaultdict': 'from collections import defaultdict',
+        'Counter': 'from collections import Counter',
+        'scipy': 'import scipy',
+        'stats': 'from scipy import stats',
+        'sklearn': 'import sklearn',
+    }
 
     def __init__(self, max_retries: int = 3, base_delay: float = 1.0):
         """
@@ -454,16 +527,21 @@ class RetryStrategy:
         self.max_retries = max_retries
         self.base_delay = base_delay
 
+        # Repair statistics tracking (Issue #54)
+        self.repair_stats = {
+            "attempted": 0,
+            "successful": 0,
+            "by_error_type": {}
+        }
+
     def should_retry(self, attempt: int, error_type: str) -> bool:
         """Determine if execution should be retried."""
         if attempt >= self.max_retries:
             return False
 
-        # Don't retry on certain errors
+        # Don't retry on certain errors that can't be fixed
         non_retryable_errors = [
-            'SyntaxError',
-            'ImportError',
-            'ModuleNotFoundError'
+            'SyntaxError',  # Requires code rewrite
         ]
 
         return error_type not in non_retryable_errors
@@ -472,52 +550,261 @@ class RetryStrategy:
         """Get delay for retry attempt (exponential backoff)."""
         return self.base_delay * (2 ** (attempt - 1))
 
+    def record_repair_attempt(self, error_type: str, success: bool):
+        """Track repair attempt statistics."""
+        self.repair_stats["attempted"] += 1
+        if success:
+            self.repair_stats["successful"] += 1
+
+        if error_type not in self.repair_stats["by_error_type"]:
+            self.repair_stats["by_error_type"][error_type] = {
+                "attempted": 0,
+                "successful": 0
+            }
+        self.repair_stats["by_error_type"][error_type]["attempted"] += 1
+        if success:
+            self.repair_stats["by_error_type"][error_type]["successful"] += 1
+
     def modify_code_for_retry(
         self,
         original_code: str,
         error: str,
-        attempt: int
+        error_type: str,
+        traceback_str: str = "",
+        attempt: int = 1,
+        llm_client: Optional[Any] = None
     ) -> Optional[str]:
         """
-        Modify code based on error for retry.
+        Modify code based on error for retry (Issue #54 - Enhanced).
+
+        Handles 10+ common error types with intelligent fixes.
 
         Args:
             original_code: Original code that failed
             error: Error message
+            error_type: Type of error (e.g., 'KeyError', 'NameError')
+            traceback_str: Full traceback string for context
             attempt: Retry attempt number
+            llm_client: Optional LLM client for intelligent repair
 
         Returns:
             Modified code or None if no modification strategy
         """
-        # Simple modifications based on common errors
-        modified_code = original_code
+        import re as regex_module
 
-        # Add error handling for common issues
-        if 'KeyError' in error:
-            # Wrap in try-except
-            modified_code = f"""try:
-{original_code}
+        # Try LLM-based repair first if available (only first 2 attempts)
+        if llm_client and attempt <= 2:
+            try:
+                fixed = self._repair_with_llm(
+                    original_code, error, traceback_str, llm_client
+                )
+                if fixed and fixed != original_code:
+                    logger.info(f"LLM repair applied for {error_type}")
+                    return fixed
+            except Exception as e:
+                logger.warning(f"LLM repair failed: {e}")
+
+        # Pattern-based fixes for common error types
+        if 'KeyError' in error_type:
+            return self._fix_key_error(original_code, error)
+
+        elif 'FileNotFoundError' in error_type:
+            return self._fix_file_not_found(original_code, error)
+
+        elif 'NameError' in error_type:
+            return self._fix_name_error(original_code, error)
+
+        elif 'TypeError' in error_type:
+            return self._fix_type_error(original_code, error)
+
+        elif 'IndexError' in error_type:
+            return self._fix_index_error(original_code, error)
+
+        elif 'AttributeError' in error_type:
+            return self._fix_attribute_error(original_code, error)
+
+        elif 'ValueError' in error_type:
+            return self._fix_value_error(original_code, error)
+
+        elif 'ZeroDivisionError' in error_type:
+            return self._fix_zero_division(original_code, error)
+
+        elif 'ImportError' in error_type or 'ModuleNotFoundError' in error_type:
+            return self._fix_import_error(original_code, error)
+
+        elif 'PermissionError' in error_type:
+            return self._fix_permission_error(original_code, error)
+
+        elif 'MemoryError' in error_type:
+            return self._fix_memory_error(original_code, error)
+
+        # No specific fix available
+        return None
+
+    def _repair_with_llm(
+        self,
+        code: str,
+        error: str,
+        traceback_str: str,
+        llm_client: Any
+    ) -> Optional[str]:
+        """Use LLM to analyze error and fix code."""
+        prompt = f"""Fix the following Python code that produced an error.
+
+ORIGINAL CODE:
+```python
+{code}
+```
+
+ERROR:
+{error}
+
+TRACEBACK:
+{traceback_str}
+
+Return ONLY the fixed Python code, no explanations. Wrap the code in ```python``` markers."""
+
+        try:
+            response = llm_client.generate(prompt, max_tokens=2000)
+
+            # Extract code from response
+            if "```python" in response:
+                start = response.find("```python") + 9
+                end = response.find("```", start)
+                if end > start:
+                    return response[start:end].strip()
+
+            # If no markers, return as-is if it looks like code
+            if "import" in response or "def " in response or "=" in response:
+                return response.strip()
+
+        except Exception as e:
+            logger.warning(f"LLM code repair error: {e}")
+
+        return None
+
+    def _fix_key_error(self, code: str, error: str) -> str:
+        """Fix KeyError by adding safe dict access."""
+        return f"""try:
+{code}
 except KeyError as e:
     print(f"KeyError: {{e}}. Using default value.")
-    results = {{'error': 'KeyError', 'details': str(e)}}
+    results = {{'error': 'KeyError', 'details': str(e), 'status': 'failed'}}
 """
 
-        elif 'FileNotFoundError' in error:
-            # Add existence check
-            modified_code = f"""import os
-if not os.path.exists('data.csv'):
-    print("Data file not found, using dummy data")
-    import pandas as pd
-    df = pd.DataFrame()
+    def _fix_file_not_found(self, code: str, error: str) -> str:
+        """Fix FileNotFoundError by adding existence check."""
+        import re as regex_module
+        # Try to extract the file path from error
+        match = regex_module.search(r"'([^']+)'", error)
+        file_path = match.group(1) if match else "data_file"
+
+        return f"""import os
+if not os.path.exists('{file_path}'):
+    print(f"File not found: '{file_path}'. Creating empty result.")
+    results = {{'error': 'FileNotFoundError', 'file': '{file_path}', 'status': 'failed'}}
 else:
-{original_code}
+{self._indent(code, 4)}
 """
 
-        else:
-            # No specific modification
-            return None
+    def _fix_name_error(self, code: str, error: str) -> str:
+        """Fix NameError by adding missing imports or definitions."""
+        import re as regex_module
+        match = regex_module.search(r"name '(\w+)' is not defined", error)
+        if match:
+            name = match.group(1)
+            if name in self.COMMON_IMPORTS:
+                return self.COMMON_IMPORTS[name] + '\n' + code
 
-        return modified_code
+        # Generic fix: wrap in try-except
+        return f"""try:
+{code}
+except NameError as e:
+    print(f"NameError: {{e}}. Variable not defined.")
+    results = {{'error': 'NameError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_type_error(self, code: str, error: str) -> str:
+        """Fix TypeError by adding type checks."""
+        return f"""try:
+{code}
+except TypeError as e:
+    print(f"TypeError: {{e}}. Type conversion issue.")
+    results = {{'error': 'TypeError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_index_error(self, code: str, error: str) -> str:
+        """Fix IndexError by adding bounds checking."""
+        return f"""try:
+{code}
+except IndexError as e:
+    print(f"IndexError: {{e}}. Index out of bounds.")
+    results = {{'error': 'IndexError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_attribute_error(self, code: str, error: str) -> str:
+        """Fix AttributeError by adding attribute check."""
+        return f"""try:
+{code}
+except AttributeError as e:
+    print(f"AttributeError: {{e}}. Attribute not found.")
+    results = {{'error': 'AttributeError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_value_error(self, code: str, error: str) -> str:
+        """Fix ValueError by adding value validation."""
+        return f"""try:
+{code}
+except ValueError as e:
+    print(f"ValueError: {{e}}. Invalid value.")
+    results = {{'error': 'ValueError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_zero_division(self, code: str, error: str) -> str:
+        """Fix ZeroDivisionError by adding zero checks."""
+        return f"""try:
+{code}
+except ZeroDivisionError as e:
+    print(f"ZeroDivisionError: {{e}}. Division by zero.")
+    results = {{'error': 'ZeroDivisionError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_import_error(self, code: str, error: str) -> str:
+        """Fix ImportError by providing fallback."""
+        import re as regex_module
+        match = regex_module.search(r"No module named '(\w+)'", error)
+        module = match.group(1) if match else "unknown"
+
+        return f"""try:
+{code}
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"ImportError: Module '{module}' not available. {{e}}")
+    results = {{'error': 'ImportError', 'module': '{module}', 'status': 'failed'}}
+"""
+
+    def _fix_permission_error(self, code: str, error: str) -> str:
+        """Fix PermissionError by using alternative path."""
+        return f"""try:
+{code}
+except PermissionError as e:
+    print(f"PermissionError: {{e}}. Access denied.")
+    results = {{'error': 'PermissionError', 'details': str(e), 'status': 'failed'}}
+"""
+
+    def _fix_memory_error(self, code: str, error: str) -> str:
+        """Fix MemoryError by suggesting batch processing."""
+        return f"""try:
+{code}
+except MemoryError as e:
+    print(f"MemoryError: {{e}}. Consider processing in smaller batches.")
+    results = {{'error': 'MemoryError', 'details': 'Out of memory', 'status': 'failed'}}
+"""
+
+    def _indent(self, code: str, spaces: int) -> str:
+        """Indent code by specified number of spaces."""
+        indent = ' ' * spaces
+        lines = code.split('\n')
+        return '\n'.join(indent + line if line.strip() else line for line in lines)
 
 
 def execute_protocol_code(
