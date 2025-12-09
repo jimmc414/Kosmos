@@ -77,6 +77,11 @@ class Finding:
     failure_detection_result: Optional[Dict] = None  # Failure modes: {over_interpretation, invented_metrics, rabbit_hole}
     # Issue #62: Code line provenance
     code_provenance: Optional[Dict] = None  # CodeProvenance: {notebook_path, cell_index, start_line, end_line, code_snippet}
+    # Issue #65: Expert validation tracking for accuracy benchmarking
+    expert_validated: bool = False  # Whether expert has validated this finding
+    validation_accurate: Optional[bool] = None  # Expert assessment of accuracy
+    validation_timestamp: Optional[str] = None  # When validation was recorded
+    validation_notes: Optional[str] = None  # Expert notes on validation
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization."""

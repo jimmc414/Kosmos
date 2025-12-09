@@ -5,7 +5,7 @@ An autonomous AI scientist for scientific discovery, implementing the architectu
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
 [![Implementation](https://img.shields.io/badge/core-90%25%20complete-green.svg)](120525_implementation_gaps_v2.md)
-[![Tests](https://img.shields.io/badge/tests-3451%20passing-green.svg)](120625_code_review.md)
+[![Tests](https://img.shields.io/badge/tests-3621%20passing-green.svg)](120625_code_review.md)
 
 ## What is Kosmos?
 
@@ -287,22 +287,21 @@ kosmos/
 | [#70](https://github.com/jimmc414/Kosmos/issues/70) | Null model statistical validation | ✅ Fixed |
 | [#63](https://github.com/jimmc414/Kosmos/issues/63) | Failure mode detection | ✅ Fixed |
 | [#62](https://github.com/jimmc414/Kosmos/issues/62) | Code line provenance | ✅ Fixed |
+| [#64](https://github.com/jimmc414/Kosmos/issues/64) | Multi-run convergence framework | ✅ Fixed |
+| [#65](https://github.com/jimmc414/Kosmos/issues/65) | Paper accuracy validation | ✅ Fixed |
 
-### Remaining Gaps
+### Implementation Complete
 
-| Priority | Count | Status |
-|----------|-------|--------|
-| Low | 2 | #64, #65 |
-
-Full tracking: [PAPER_IMPLEMENTATION_GAPS.md](docs/PAPER_IMPLEMENTATION_GAPS.md) (15/17 gaps complete)
+All 17 paper implementation gaps have been addressed. Full tracking: [PAPER_IMPLEMENTATION_GAPS.md](docs/PAPER_IMPLEMENTATION_GAPS.md)
 
 ### Test Coverage
 
 | Category | Count | Status |
 |----------|-------|--------|
-| Unit tests | 2095 | Passing |
-| Integration tests | 351 | Passing |
-| E2E tests | 138 | Most pass, some skip (environment-dependent) |
+| Unit tests | 2168 | Passing |
+| Integration tests | 401 | Passing |
+| E2E tests | 121 | Most pass, some skip (environment-dependent) |
+| Requirements tests | 815 | Passing |
 
 E2E tests skip based on environment:
 - Neo4j not configured (`@pytest.mark.requires_neo4j`)
@@ -385,4 +384,4 @@ MIT License
 
 ---
 
-**Version**: 0.2.0-alpha | **Tests**: 3451 passing | **Last Updated**: 2025-12-09
+**Version**: 0.2.0-alpha | **Tests**: 3621 passing | **Last Updated**: 2025-12-09

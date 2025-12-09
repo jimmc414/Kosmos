@@ -31,7 +31,25 @@ Performance Targets:
 """
 
 from .research_loop import ResearchWorkflow
+from .ensemble import (
+    EnsembleRunner,
+    ConvergenceAnalyzer,
+    ConvergenceReporter,
+    EnsembleResult,
+    FindingMatch,
+    ConvergenceMetrics,
+    RunConfig,
+    run_ensemble,
+)
 
 __all__ = [
     "ResearchWorkflow",
+    "EnsembleRunner",
+    "ConvergenceAnalyzer",
+    "ConvergenceReporter",
+    "EnsembleResult",
+    "FindingMatch",
+    "ConvergenceMetrics",
+    "RunConfig",
+    "run_ensemble",
 ]

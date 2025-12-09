@@ -56,7 +56,9 @@ class ResearchWorkflow:
         anthropic_client=None,
         artifacts_dir: str = "artifacts",
         world_model=None,
-        max_cycles: int = 20
+        max_cycles: int = 20,
+        seed: Optional[int] = None,
+        temperature: Optional[float] = None
     ):
         """
         Initialize Research Workflow.
@@ -67,9 +69,22 @@ class ResearchWorkflow:
             artifacts_dir: Directory for artifact storage
             world_model: Optional knowledge graph
             max_cycles: Maximum research cycles
+            seed: Random seed for reproducibility (Issue #64)
+            temperature: LLM temperature override (Issue #64)
         """
         self.research_objective = research_objective
         self.max_cycles = max_cycles
+        self._seed = seed
+        self._temperature = temperature
+
+        # Apply seed if provided (Issue #64: Multi-Run Convergence)
+        if seed is not None:
+            from kosmos.safety.reproducibility import ReproducibilityManager
+            self._reproducibility_manager = ReproducibilityManager(default_seed=seed)
+            self._reproducibility_manager.set_seed(seed)
+            logger.info(f"Set random seed: {seed}")
+        else:
+            self._reproducibility_manager = None
 
         # Initialize components
         logger.info("Initializing Kosmos Research Workflow...")
