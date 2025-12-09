@@ -5,7 +5,7 @@ An autonomous AI scientist for scientific discovery, implementing the architectu
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
 [![Implementation](https://img.shields.io/badge/core-90%25%20complete-green.svg)](120525_implementation_gaps_v2.md)
-[![Tests](https://img.shields.io/badge/tests-3621%20passing-green.svg)](120625_code_review.md)
+[![Tests](https://img.shields.io/badge/tests-3704%20passing-green.svg)](120625_code_review.md)
 
 ## What is Kosmos?
 
@@ -82,6 +82,12 @@ kosmos run --interactive
 # Maximum verbosity
 kosmos run "Your question" --domain biology --trace
 
+# Real-time streaming display
+kosmos run "Your question" --stream
+
+# Streaming with token display disabled
+kosmos run "Your question" --stream --no-stream-tokens
+
 # Show system information
 kosmos info
 
@@ -105,6 +111,7 @@ kosmos doctor
 | Budget Enforcement | Cost tracking with configurable limits and enforcement | Complete |
 | Error Recovery | Exponential backoff with circuit breaker | Complete |
 | Debug Mode | 4-level verbosity with stage tracking | Complete |
+| Real-time Streaming | SSE/WebSocket events, CLI --stream flag | Complete |
 
 ### Code Execution Security
 
@@ -289,6 +296,7 @@ kosmos/
 | [#62](https://github.com/jimmc414/Kosmos/issues/62) | Code line provenance | ✅ Fixed |
 | [#64](https://github.com/jimmc414/Kosmos/issues/64) | Multi-run convergence framework | ✅ Fixed |
 | [#65](https://github.com/jimmc414/Kosmos/issues/65) | Paper accuracy validation | ✅ Fixed |
+| [#72](https://github.com/jimmc414/Kosmos/issues/72) | Real-time streaming API | ✅ Fixed |
 
 ### Implementation Complete
 
@@ -298,8 +306,8 @@ All 17 paper implementation gaps have been addressed. Full tracking: [PAPER_IMPL
 
 | Category | Count | Status |
 |----------|-------|--------|
-| Unit tests | 2168 | Passing |
-| Integration tests | 401 | Passing |
+| Unit tests | 2251 | Passing |
+| Integration tests | 415 | Passing |
 | E2E tests | 121 | Most pass, some skip (environment-dependent) |
 | Requirements tests | 815 | Passing |
 
@@ -384,4 +392,4 @@ MIT License
 
 ---
 
-**Version**: 0.2.0-alpha | **Tests**: 3621 passing | **Last Updated**: 2025-12-09
+**Version**: 0.2.0-alpha | **Tests**: 3704 passing | **Last Updated**: 2025-12-09

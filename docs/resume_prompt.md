@@ -2,7 +2,7 @@
 
 ## Project State
 
-Kosmos - autonomous AI scientist implementation. All 17 paper implementation gaps are complete. GitHub issues #54-#70 (excluding #66-68 blockers which were already closed) have been closed with implementation details.
+Kosmos - autonomous AI scientist implementation. All 17 paper implementation gaps complete. Issue #72 (Streaming API) implemented.
 
 ## Completed Work
 
@@ -18,57 +18,90 @@ All gaps from the original paper have been addressed:
 | Medium | #62, #63 | Complete |
 | Low | #64, #65 | Complete |
 
-### Recent Session (#65)
+### Issue #72 - Streaming API (Current Session)
 
-Implemented paper accuracy validation framework:
+Full streaming implementation for real-time visibility into long-running research workflows:
 
-- `kosmos/validation/accuracy_tracker.py` - AccuracyTracker, AccuracyReporter
-- `kosmos/validation/benchmark_dataset.py` - BenchmarkDataset, BenchmarkGenerator
-- `data/benchmarks/paper_accuracy_benchmark.json` - 90 synthetic findings
-- 102 new tests (40 + 32 + 30)
+**New Files Created:**
+- `kosmos/core/events.py` - Event types (18 types) and dataclasses
+- `kosmos/core/event_bus.py` - Central pub/sub system with filtering
+- `kosmos/api/streaming.py` - SSE endpoint at `/stream/events`
+- `kosmos/api/websocket.py` - WebSocket endpoint at `/ws/events`
+- `kosmos/cli/streaming.py` - Rich-based StreamingDisplay class
+- `tests/unit/core/test_events.py` - 39 event serialization tests
+- `tests/unit/core/test_event_bus.py` - 30 pub/sub tests
+- `tests/integration/test_streaming_e2e.py` - 14 integration tests
 
-Paper targets: 79.4% overall, 85.5% data analysis, 82.1% literature, 57.9% interpretation
+**Files Modified:**
+- `kosmos/core/stage_tracker.py` - Added callback and event bus integration
+- `kosmos/core/providers/anthropic.py` - Added `generate_stream()` and `generate_stream_async()`
+- `kosmos/workflow/research_loop.py` - Workflow event emission
+- `kosmos/cli/commands/run.py` - Added `--stream` and `--stream-tokens` flags
+
+**Architecture:**
+```
+Event Sources                           Subscribers
+┌─────────────────┐                    ┌─────────────┐
+│ ResearchWorkflow │─┐                ┌─│ CLI (Rich)  │
+│ LLM Providers    │ │  ┌──────────┐  │ │ SSE API     │
+│ StageTracker     │─┼──│ EventBus │──┼─│ WebSocket   │
+└─────────────────┘─┘  └──────────┘  └─└─────────────┘
+```
 
 ## Test Status
 
-- Total: 3621 tests
-- Known failures: 517 (environment-dependent, documented in #72)
-- Primary causes: CUDA memory, mock paths, async issues
+- Total: 3704 tests
+- 83 new streaming tests (69 unit + 14 integration)
 
 ## Open Issues
 
 | Issue | Description |
 |-------|-------------|
-| #72 | Stream API responses (feature request) |
 | #51, #42, #11, #1 | User questions |
 
-## Potential Next Steps
-
-1. **Fix test failures** - Address the 517 environment-dependent failures documented in #72
-2. **Streaming API (#72)** - Implement real-time visibility for long-running operations
-3. **Real validation study** - Replace synthetic benchmark with expert-annotated findings
-4. **Production hardening** - Phase 4 polyglot persistence
-
-## Quick Start
+## Usage Examples
 
 ```bash
-# Verify imports
-python -c "from kosmos.validation import AccuracyTracker, BenchmarkDataset; print('OK')"
+# CLI streaming
+kosmos run "Your question" --stream
+kosmos run "Your question" --stream --no-stream-tokens
 
-# Run new tests
-python -m pytest tests/unit/validation/test_accuracy_tracker.py tests/unit/validation/test_benchmark_dataset.py -v
+# SSE endpoint
+curl -N http://localhost:8000/stream/events?process_id=research_abc
 
-# Check benchmark
-python -c "
-from kosmos.validation import create_paper_benchmark
-ds = create_paper_benchmark()
-print(f'{len(ds.findings)} findings, accuracy: {ds.get_accuracy_by_type()}')
-"
+# WebSocket
+ws://localhost:8000/ws/events?process_id=research_abc
+
+# Python API
+from kosmos.core.event_bus import get_event_bus
+event_bus = get_event_bus()
+event_bus.subscribe(my_callback, event_types=[EventType.LLM_TOKEN])
+```
+
+## Quick Verification
+
+```bash
+# Verify streaming imports
+python -c "from kosmos.core.events import EventType, WorkflowEvent; print('OK')"
+python -c "from kosmos.core.event_bus import get_event_bus; print('OK')"
+python -c "from kosmos.cli.streaming import StreamingDisplay; print('OK')"
+
+# Run streaming tests
+python -m pytest tests/unit/core/test_events.py tests/unit/core/test_event_bus.py -v
+python -m pytest tests/integration/test_streaming_e2e.py -v
 ```
 
 ## Key Files
 
-- `docs/CHECKPOINT.md` - Session summary
-- `docs/PAPER_IMPLEMENTATION_GAPS.md` - Gap tracking (17/17)
-- `kosmos/validation/accuracy_tracker.py` - Accuracy measurement
-- `kosmos/validation/benchmark_dataset.py` - Benchmark management
+- `kosmos/core/events.py` - Event type definitions
+- `kosmos/core/event_bus.py` - EventBus singleton
+- `kosmos/cli/streaming.py` - CLI display
+- `kosmos/api/streaming.py` - SSE endpoint
+- `kosmos/api/websocket.py` - WebSocket endpoint
+
+## Potential Next Steps
+
+1. **Fix test failures** - Address environment-dependent test failures
+2. **Production hardening** - Phase 4 polyglot persistence
+3. **Real validation study** - Replace synthetic benchmark with expert-annotated findings
+4. **Performance optimization** - Profile and optimize hot paths

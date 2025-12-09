@@ -2,6 +2,7 @@
 Real-time stage tracking for debug observability.
 
 Provides context managers and utilities for tracking multi-step research processes.
+Integrates with the streaming event bus for real-time visibility.
 """
 
 import json
@@ -11,9 +12,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, Literal, List
+from typing import Callable, Dict, Any, Optional, Literal, List
 
 logger = logging.getLogger(__name__)
+
+# Callback type for stage events
+StageCallback = Callable[["StageEvent"], None]
 
 
 @dataclass
@@ -52,7 +56,9 @@ class StageTracker:
         process_id: str,
         output_file: Optional[str] = None,
         emit_to_stdout: bool = False,
-        enabled: bool = True
+        enabled: bool = True,
+        callbacks: Optional[List[StageCallback]] = None,
+        emit_to_event_bus: bool = True
     ):
         self.process_id = process_id
         self.output_file = output_file or "logs/stages.jsonl"
@@ -61,6 +67,8 @@ class StageTracker:
         self._stage_stack: List[str] = []
         self.current_iteration = 0
         self._events: List[StageEvent] = []
+        self._callbacks: List[StageCallback] = callbacks or []
+        self._emit_to_event_bus = emit_to_event_bus
 
         # Ensure output directory exists
         if self.enabled and self.output_file:
@@ -130,6 +138,26 @@ class StageTracker:
         )
         self._emit(event)
 
+    def add_callback(self, callback: StageCallback) -> None:
+        """
+        Add a callback for event emission.
+
+        Args:
+            callback: Function to call with each StageEvent
+        """
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+
+    def remove_callback(self, callback: StageCallback) -> None:
+        """
+        Remove a callback.
+
+        Args:
+            callback: The callback to remove
+        """
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+
     def _emit(self, event: StageEvent):
         """Emit stage event to configured outputs."""
         event_json = event.to_json()
@@ -143,6 +171,53 @@ class StageTracker:
                     f.write(event_json + "\n")
             except Exception as e:
                 logger.warning(f"Failed to write stage event: {e}")
+
+        # Call registered callbacks
+        for callback in self._callbacks:
+            try:
+                callback(event)
+            except Exception as e:
+                logger.warning(f"Stage callback error: {e}")
+
+        # Publish to event bus if enabled
+        if self._emit_to_event_bus:
+            self._publish_to_event_bus(event)
+
+    def _publish_to_event_bus(self, event: StageEvent) -> None:
+        """Convert and publish stage event to global event bus."""
+        try:
+            from kosmos.core.events import (
+                StageEvent as StreamingStageEvent,
+                EventType
+            )
+            from kosmos.core.event_bus import get_event_bus
+
+            # Map status to event type
+            event_type = {
+                "started": EventType.STAGE_STARTED,
+                "completed": EventType.STAGE_COMPLETED,
+                "failed": EventType.STAGE_FAILED,
+            }.get(event.status, EventType.STAGE_STARTED)
+
+            streaming_event = StreamingStageEvent(
+                type=event_type,
+                process_id=event.process_id,
+                stage=event.stage,
+                substage=event.substage,
+                parent_stage=event.parent_stage,
+                status=event.status,
+                iteration=event.iteration,
+                duration_ms=event.duration_ms,
+                output_summary=event.output_summary,
+                metadata=event.metadata
+            )
+
+            get_event_bus().publish_sync(streaming_event)
+        except ImportError:
+            # Event bus not available, skip
+            pass
+        except Exception as e:
+            logger.debug(f"Failed to publish to event bus: {e}")
 
     def get_events(self) -> List[StageEvent]:
         """Get all recorded events."""

@@ -4,9 +4,11 @@ Research Workflow Integration for Kosmos.
 Orchestrates the complete autonomous research cycle integrating all 6 gaps.
 
 This is the main entry point for running the Kosmos AI scientist system.
+Emits streaming events for real-time visibility via EventBus.
 """
 
 import logging
+import uuid
 from typing import Dict, List, Optional
 from datetime import datetime
 
@@ -120,6 +122,19 @@ class ResearchWorkflow:
         self.cycle_results = []
         self.start_time = None
 
+        # Streaming event support
+        self.process_id = f"research_{uuid.uuid4().hex[:8]}"
+        self._event_bus = None
+        self._emit_events = True
+
+        # Try to get event bus
+        try:
+            from kosmos.core.event_bus import get_event_bus
+            self._event_bus = get_event_bus()
+        except ImportError:
+            self._emit_events = False
+            logger.debug("EventBus not available, streaming disabled")
+
     async def run(
         self,
         num_cycles: int = 5,
@@ -151,8 +166,23 @@ class ResearchWorkflow:
             f"{'='*70}\n"
         )
 
+        # Emit workflow started event
+        await self._emit_workflow_event(
+            "started",
+            cycle=0,
+            max_cycles=num_cycles
+        )
+
         for cycle in range(1, num_cycles + 1):
             logger.info(f"\n--- Cycle {cycle}/{num_cycles} ---")
+
+            # Emit cycle started event
+            await self._emit_cycle_event(
+                "started",
+                cycle=cycle,
+                max_cycles=num_cycles,
+                tasks_count=tasks_per_cycle
+            )
 
             try:
                 cycle_result = await self._execute_cycle(cycle, tasks_per_cycle)
@@ -164,12 +194,53 @@ class ResearchWorkflow:
                     f"{cycle_result.get('validated_findings', 0)} validated findings"
                 )
 
+                # Emit cycle completed event
+                await self._emit_cycle_event(
+                    "completed",
+                    cycle=cycle,
+                    max_cycles=num_cycles,
+                    tasks_count=tasks_per_cycle,
+                    completed_tasks=cycle_result.get('tasks_completed', 0),
+                    findings_count=cycle_result.get('validated_findings', 0)
+                )
+
+                # Emit workflow progress event
+                progress_percent = (cycle / num_cycles) * 100
+                total_findings = sum(r.get('validated_findings', 0) for r in self.cycle_results)
+                await self._emit_workflow_event(
+                    "progress",
+                    cycle=cycle,
+                    max_cycles=num_cycles,
+                    progress_percent=progress_percent,
+                    findings_count=total_findings
+                )
+
             except Exception as e:
                 logger.error(f"Cycle {cycle} failed: {e}")
+
+                # Emit cycle failed event
+                await self._emit_cycle_event(
+                    "failed",
+                    cycle=cycle,
+                    max_cycles=num_cycles,
+                    tasks_count=tasks_per_cycle
+                )
                 continue
 
         # Compute final statistics
-        return self._compute_final_statistics()
+        results = self._compute_final_statistics()
+
+        # Emit workflow completed event
+        await self._emit_workflow_event(
+            "completed",
+            cycle=num_cycles,
+            max_cycles=num_cycles,
+            progress_percent=100.0,
+            findings_count=results.get('validated_findings', 0),
+            validated_count=results.get('validated_findings', 0)
+        )
+
+        return results
 
     async def _execute_cycle(self, cycle: int, num_tasks: int) -> Dict:
         """Execute one research cycle."""
@@ -396,3 +467,103 @@ class ResearchWorkflow:
             'skill_loader': self.skill_loader.get_statistics(),
             'novelty_detector': self.novelty_detector.get_statistics()
         }
+
+    async def _emit_workflow_event(
+        self,
+        status: str,
+        cycle: int = 0,
+        max_cycles: int = 0,
+        progress_percent: float = 0.0,
+        findings_count: int = 0,
+        validated_count: int = 0
+    ) -> None:
+        """
+        Emit a workflow lifecycle event.
+
+        Args:
+            status: Event status (started, progress, completed, failed)
+            cycle: Current cycle number
+            max_cycles: Total number of cycles
+            progress_percent: Progress percentage
+            findings_count: Total findings count
+            validated_count: Validated findings count
+        """
+        if not self._emit_events or self._event_bus is None:
+            return
+
+        try:
+            from kosmos.core.events import WorkflowEvent, EventType
+
+            event_type = {
+                "started": EventType.WORKFLOW_STARTED,
+                "progress": EventType.WORKFLOW_PROGRESS,
+                "completed": EventType.WORKFLOW_COMPLETED,
+                "failed": EventType.WORKFLOW_FAILED,
+            }.get(status, EventType.WORKFLOW_PROGRESS)
+
+            event = WorkflowEvent(
+                type=event_type,
+                process_id=self.process_id,
+                research_question=self.research_objective,
+                state=status,
+                cycle=cycle,
+                max_cycles=max_cycles,
+                progress_percent=progress_percent,
+                findings_count=findings_count,
+                validated_count=validated_count
+            )
+
+            await self._event_bus.publish(event)
+
+        except Exception as e:
+            logger.debug(f"Failed to emit workflow event: {e}")
+
+    async def _emit_cycle_event(
+        self,
+        status: str,
+        cycle: int,
+        max_cycles: int,
+        tasks_count: int = 0,
+        completed_tasks: int = 0,
+        findings_count: int = 0,
+        duration_ms: int = None
+    ) -> None:
+        """
+        Emit a research cycle event.
+
+        Args:
+            status: Event status (started, completed, failed)
+            cycle: Current cycle number
+            max_cycles: Total number of cycles
+            tasks_count: Total tasks in cycle
+            completed_tasks: Completed tasks count
+            findings_count: Findings generated this cycle
+            duration_ms: Cycle duration in milliseconds
+        """
+        if not self._emit_events or self._event_bus is None:
+            return
+
+        try:
+            from kosmos.core.events import CycleEvent, EventType
+
+            event_type = {
+                "started": EventType.CYCLE_STARTED,
+                "completed": EventType.CYCLE_COMPLETED,
+                "failed": EventType.CYCLE_FAILED,
+            }.get(status, EventType.CYCLE_STARTED)
+
+            event = CycleEvent(
+                type=event_type,
+                process_id=self.process_id,
+                cycle=cycle,
+                max_cycles=max_cycles,
+                tasks_count=tasks_count,
+                completed_tasks=completed_tasks,
+                findings_count=findings_count,
+                duration_ms=duration_ms
+            )
+
+            await self._event_bus.publish(event)
+
+        except Exception as e:
+            logger.debug(f"Failed to emit cycle event: {e}")

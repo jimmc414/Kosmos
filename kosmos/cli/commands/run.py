@@ -56,6 +56,8 @@ def run_research(
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable caching"),
     interactive: bool = typer.Option(False, "--interactive", help="Use interactive mode"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save results to file (JSON or Markdown)"),
+    stream: bool = typer.Option(False, "--stream", "-s", help="Enable real-time event streaming display"),
+    stream_tokens: bool = typer.Option(True, "--stream-tokens/--no-stream-tokens", help="Show LLM token streaming (with --stream)"),
 ):
     """
     Run autonomous research on a scientific question.
@@ -73,6 +75,12 @@ def run_research(
 
         # Save results
         kosmos run "Question" --output results.json
+
+        # With real-time streaming (shows LLM tokens and events)
+        kosmos run "Question" --stream
+
+        # Streaming without token display (just progress events)
+        kosmos run "Question" --stream --no-stream-tokens
     """
     # Use interactive mode if requested or no question provided
     if interactive or not question:
@@ -166,7 +174,13 @@ def run_research(
         logger.info(f"Registered ResearchDirector with AgentRegistry")
 
         # Run research with live progress (async)
-        results = asyncio.run(run_with_progress_async(director, question, max_iterations))
+        results = asyncio.run(run_with_progress_async(
+            director,
+            question,
+            max_iterations,
+            enable_streaming=stream,
+            show_tokens=stream_tokens
+        ))
 
         # Display results
         viewer = ResultsViewer()
@@ -199,7 +213,13 @@ def run_research(
         raise typer.Exit(1)
 
 
-async def run_with_progress_async(director, question: str, max_iterations: int) -> dict:
+async def run_with_progress_async(
+    director,
+    question: str,
+    max_iterations: int,
+    enable_streaming: bool = False,
+    show_tokens: bool = True
+) -> dict:
     """
     Run research with live progress display asynchronously.
 
@@ -207,10 +227,26 @@ async def run_with_progress_async(director, question: str, max_iterations: int) 
         director: ResearchDirectorAgent instance
         question: Research question
         max_iterations: Maximum iterations
+        enable_streaming: Enable real-time event streaming
+        show_tokens: Show LLM token streaming (with enable_streaming)
 
     Returns:
         Research results dictionary
     """
+    # Initialize streaming display if enabled
+    streaming_display = None
+    if enable_streaming:
+        try:
+            from kosmos.cli.streaming import create_streaming_display
+            streaming_display = create_streaming_display(
+                console=console,
+                process_id=None,  # Will receive all events
+                show_tokens=show_tokens
+            )
+            streaming_display.start()
+            logger.info("Streaming display enabled")
+        except Exception as e:
+            logger.warning(f"Could not enable streaming display: {e}")
     # Create progress bars
     progress = Progress(
         SpinnerColumn(),
@@ -412,9 +448,16 @@ async def run_with_progress_async(director, question: str, max_iterations: int) 
                 },
             }
 
+            # Stop streaming display if enabled
+            if streaming_display:
+                streaming_display.stop()
+
             return results
 
         except Exception as e:
+            # Stop streaming display on error
+            if streaming_display:
+                streaming_display.stop()
             console.print(f"\n[error]Error during research: {str(e)}[/error]")
             raise
 
