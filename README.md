@@ -1,5 +1,8 @@
 # Kosmos
 
+[![Run in Smithery](https://smithery.ai/badge/skills/jimmc414)](https://smithery.ai/skills?ns=jimmc414&utm_source=github&utm_medium=badge)
+
+
 An autonomous AI scientist for scientific discovery, implementing the architecture described in [Lu et al. (2024)](https://arxiv.org/abs/2511.02824).
 
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
