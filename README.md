@@ -5,7 +5,7 @@ An autonomous AI scientist for scientific discovery, implementing the architectu
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
 [![Implementation](https://img.shields.io/badge/core-90%25%20complete-green.svg)](120525_implementation_gaps_v2.md)
-[![Tests](https://img.shields.io/badge/tests-2584%20passing-green.svg)](120625_code_review.md)
+[![Tests](https://img.shields.io/badge/tests-3365%20passing-green.svg)](120625_code_review.md)
 
 ## What is Kosmos?
 

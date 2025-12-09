@@ -8,10 +8,11 @@
 
 ## Session Summary
 
-This session implemented 1 High priority paper implementation gap as part of the production readiness roadmap:
-1. **#70 - Null Model Statistical Validation**: Permutation testing to validate findings against null models
+This session implemented 1 Medium priority paper implementation gap as part of the production readiness roadmap:
+1. **#63 - Failure Mode Detection**: Detection for over-interpretation, invented metrics, and rabbit holes
 
 Previously completed (this release cycle):
+- **#70 - Null Model Statistical Validation**: Permutation testing to validate findings against null models
 - **#59 - h5ad/Parquet Data Format Support**: Scientific data formats for single-cell RNA-seq and columnar analytics
 - **#69 - R Language Execution Support**: R code execution enabling Mendelian Randomization analyses
 - **#60 - Figure Generation**: Publication-quality figure generation using PublicationVisualizer
@@ -20,6 +21,43 @@ Previously completed (this release cycle):
 ---
 
 ## Work Completed This Session
+
+### Issue #63 - Failure Mode Detection ✅
+
+**Files Created/Modified**:
+- `kosmos/validation/failure_detector.py` - **NEW** FailureDetector, FailureDetectionResult, FailureModeScore classes (350+ lines)
+- `kosmos/validation/__init__.py` - Exported FailureDetector, FailureDetectionResult, FailureModeScore
+- `kosmos/world_model/artifacts.py` - Added `failure_detection_result` field to Finding
+- `tests/unit/validation/test_failure_detector.py` - **NEW** 60 unit tests
+- `tests/integration/validation/test_failure_detection_pipeline.py` - **NEW** 22 integration tests
+
+**Features**:
+- `FailureDetector` class with three detection methods:
+  - **Over-interpretation Detection**: Compares claim strength (strong/hedged word analysis) vs statistical strength (p-value, effect size, sample size weighted scoring)
+  - **Invented Metrics Detection**: Validates metrics against 60+ standard statistical terms, dataset schema, and finding statistics keys
+  - **Rabbit Hole Detection**: Keyword similarity between finding and research question + hypothesis generation depth penalty
+- `FailureDetectionResult` dataclass:
+  - Scores for each failure mode (0-1 scale)
+  - Overall weighted score (0.4 over-interp + 0.3 invented + 0.3 rabbit hole)
+  - passes_validation flag, warnings list, recommendations list
+  - has_failures property, get_summary() method
+  - to_dict()/from_dict() serialization
+- `FailureModeScore` dataclass:
+  - Individual detection result with score, detected flag, confidence
+  - Evidence list documenting why detection triggered
+  - Recommendations for fixing the issue
+- Configurable thresholds:
+  - over_interpretation_threshold: 0.6 (default)
+  - invented_metrics_threshold: 0.5 (default)
+  - rabbit_hole_threshold: 0.7 (default)
+  - similarity_threshold: 0.3 (minimum relevance to RQ)
+- Batch processing: batch_detect() and get_failure_statistics() methods
+- Finding dataclass extended:
+  - `failure_detection_result: Optional[Dict]` - Failure mode detection results
+
+**Tests**: 82 tests (60 unit + 22 integration) - All passing
+
+---
 
 ### Issue #70 - Null Model Statistical Validation ✅
 
@@ -53,61 +91,6 @@ Previously completed (this release cycle):
 
 ---
 
-### Issue #61 - Jupyter Notebook Generation ✅
-
-**Files Created/Modified**:
-- `kosmos/execution/notebook_generator.py` - **NEW** NotebookGenerator class (530+ lines)
-- `kosmos/world_model/artifacts.py` - Added `notebook_metadata` field to Finding
-- `tests/unit/execution/test_notebook_generator.py` - **NEW** 44 unit tests
-- `tests/integration/test_notebook_generation.py` - **NEW** 21 integration tests
-
-**Features**:
-- `NotebookGenerator` class:
-  - Creates .ipynb files from executed code using nbformat library
-  - Supports Python and R kernels
-  - Embeds execution outputs (stdout, stderr, return_value, errors) via `nbformat.v4.new_output()`
-  - References generated figures in markdown cells
-  - Tracks total line count across all notebooks (paper claims ~42,000)
-  - Directory structure: `artifacts/cycle_N/notebooks/task_M_type.ipynb`
-- `NotebookMetadata` dataclass for tracking notebook information
-- Code cell splitting on `# %%` markers or logical sections (imports vs main code)
-- Finding dataclass extended:
-  - `notebook_metadata: Optional[Dict]` - Notebook metadata (kernel, line_count, cell_count)
-- Convenience function `create_notebook_from_code()` for standalone use
-
-**Tests**: 65 tests (44 unit + 21 integration) - All passing
-
----
-
-### Issue #60 - Figure Generation ✅
-
-**Files Created/Modified**:
-- `kosmos/execution/figure_manager.py` - **NEW** FigureManager class (200+ lines)
-- `kosmos/execution/code_generator.py` - Added figure generation to 4 code templates
-- `kosmos/world_model/artifacts.py` - Added `figure_paths` and `figure_metadata` fields to Finding
-- `tests/unit/execution/test_figure_manager.py` - **NEW** 35 unit tests
-- `tests/integration/test_figure_generation.py` - **NEW** 19 integration tests
-
-**Features**:
-- `FigureManager` class:
-  - Manages figure output paths: `artifacts/cycle_N/figures/`
-  - Maps analysis types to plot types (t-test → box_plot, correlation → scatter, etc.)
-  - Tracks figure metadata (path, type, DPI, caption)
-  - Integrates with existing `PublicationVisualizer`
-- Updated code templates with figure generation:
-  - TTestComparisonCodeTemplate → `box_plot_with_points()`
-  - CorrelationAnalysisCodeTemplate → `scatter_with_regression()`
-  - LogLogScalingCodeTemplate → `log_log_plot()` (600 DPI)
-  - MLExperimentCodeTemplate → `scatter_with_regression()`
-- Publication-quality output:
-  - DPI: 300 (standard), 600 (panels/log-log)
-  - Arial TrueType fonts
-  - kosmos-figures color scheme (#d7191c, #0072B2, #abd9e9)
-
-**Tests**: 54 tests (35 unit + 19 integration) - All passing
-
----
-
 ## Previously Completed (All Sessions)
 
 ### BLOCKER Issues (3/3 Complete)
@@ -135,33 +118,34 @@ Previously completed (this release cycle):
 | #61 | Jupyter Notebook Generation | ✅ FIXED |
 | #70 | Null Model Statistical Validation | ✅ FIXED |
 
+### Medium Priority Issues (1/2 Complete)
+| Issue | Description | Status |
+|-------|-------------|--------|
+| #63 | Failure Mode Detection | ✅ FIXED |
+| #62 | Code Line Provenance | Pending |
+
 ---
 
 ## Progress Summary
 
-**13/17 gaps fixed (76%)**
+**14/17 gaps fixed (82%)**
 
 | Priority | Status |
 |----------|--------|
 | BLOCKER | 3/3 Complete ✅ |
 | Critical | 5/5 Complete ✅ |
 | High | 5/5 Complete ✅ |
-| Medium | 0/2 Remaining |
+| Medium | 1/2 Complete |
 | Low | 0/2 Remaining |
 
 ---
 
 ## Remaining Work (Prioritized Order)
 
-### Phase 3: Validation Quality
-| Order | Issue | Description |
-|-------|-------|-------------|
-| 6 | #63 | Failure Mode Detection | **NEXT** |
-
 ### Phase 4: Traceability
 | Order | Issue | Description |
 |-------|-------|-------------|
-| 7 | #62 | Code Line Provenance |
+| 7 | #62 | Code Line Provenance | **NEXT** |
 
 ### Phase 5: System Validation
 | Order | Issue | Description |
@@ -174,50 +158,46 @@ Previously completed (this release cycle):
 ## Quick Verification Commands
 
 ```bash
-# Verify notebook generation
+# Verify failure detection
 python -c "
-from kosmos.execution.notebook_generator import NotebookGenerator, NotebookMetadata
-from kosmos.world_model.artifacts import Finding
+from kosmos.validation import FailureDetector, FailureDetectionResult, FailureModeScore
 
-# Test NotebookGenerator
-gen = NotebookGenerator(artifacts_dir='/tmp/test')
-print('NotebookGenerator initialized')
-
-# Test NotebookMetadata
-meta = NotebookMetadata(
-    path='/tmp/test.ipynb',
-    title='Test',
-    cycle=1, task_id=1,
-    analysis_type='test',
-    kernel='python3',
-    code_cell_count=3, markdown_cell_count=1,
-    total_line_count=50
-)
-print(f'NotebookMetadata: {meta.to_dict()}')
-
-# Test Finding with notebook_metadata
-finding = Finding(
-    finding_id='f1', cycle=1, task_id=1,
-    summary='test', statistics={},
-    notebook_path='path/nb.ipynb',
-    notebook_metadata={'kernel': 'python3', 'line_count': 50}
-)
-print(f'Finding.notebook_metadata: {finding.notebook_metadata}')
+# Test FailureDetector
+detector = FailureDetector()
+finding = {
+    'finding_id': 'test_001',
+    'summary': 'Genetic analysis shows association with cancer susceptibility',
+    'statistics': {
+        'p_value': 0.001,
+        'effect_size': 0.7,
+        'sample_size': 150,
+    },
+    'interpretation': 'Results suggest genetic factors contribute to cancer risk.',
+}
+context = {
+    'research_question': 'What genetic factors are associated with cancer susceptibility?',
+}
+result = detector.detect_failures(finding, context)
+print(f'Overall score: {result.overall_score:.3f}')
+print(f'Passes validation: {result.passes_validation}')
+print(f'Over-interpretation: {result.over_interpretation.score:.3f} (detected: {result.over_interpretation.detected})')
+print(f'Invented metrics: {result.invented_metrics.score:.3f} (detected: {result.invented_metrics.detected})')
+print(f'Rabbit hole: {result.rabbit_hole.score:.3f} (detected: {result.rabbit_hole.detected})')
 print('All imports successful')
 "
 
 # Run tests
-python -m pytest tests/unit/execution/test_notebook_generator.py -v --tb=short
-python -m pytest tests/integration/test_notebook_generation.py -v --tb=short
+python -m pytest tests/unit/validation/test_failure_detector.py -v --tb=short
+python -m pytest tests/integration/validation/test_failure_detection_pipeline.py -v --tb=short
 ```
 
 ---
 
 ## Key Documentation
 
-- `docs/PAPER_IMPLEMENTATION_GAPS.md` - 17 tracked gaps (12 complete)
+- `docs/PAPER_IMPLEMENTATION_GAPS.md` - 17 tracked gaps (14 complete)
 - `docs/resume_prompt.md` - Post-compaction resume instructions
-- `/home/jim/.claude/plans/peppy-floating-feather.md` - Full implementation plan
+- `/home/jim/.claude/plans/groovy-questing-allen.md` - Failure mode detection plan
 - GitHub Issues #54-#70 - Detailed tracking
 
 ---
@@ -232,10 +212,10 @@ The approved implementation order (from plan file):
 | 1 | 2 | #69 | R Language Support | ✅ Complete |
 | 2 | 3 | #60 | Figure Generation | ✅ Complete |
 | 2 | 4 | #61 | Jupyter Notebook Generation | ✅ Complete |
-| 3 | 5 | #70 | Null Model Statistical Validation | **NEXT** |
-| 3 | 6 | #63 | Failure Mode Detection | Pending |
-| 4 | 7 | #62 | Code Line Provenance | Pending |
+| 3 | 5 | #70 | Null Model Statistical Validation | ✅ Complete |
+| 3 | 6 | #63 | Failure Mode Detection | ✅ Complete |
+| 4 | 7 | #62 | Code Line Provenance | **NEXT** |
 | 5 | 8 | #64 | Multi-Run Convergence | Pending |
 | 5 | 9 | #65 | Paper Accuracy Validation | Pending |
 
-**Next step**: #70 - Null Model Statistical Validation
+**Next step**: #62 - Code Line Provenance

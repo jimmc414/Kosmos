@@ -2,7 +2,7 @@
 
 ## Context
 
-You are resuming work on the Kosmos project after a context compaction. The previous sessions implemented **13 paper implementation gaps** (3 BLOCKER + 5 Critical + 5 High).
+You are resuming work on the Kosmos project after a context compaction. The previous sessions implemented **14 paper implementation gaps** (3 BLOCKER + 5 Critical + 5 High + 1 Medium).
 
 ## What Was Done
 
@@ -23,26 +23,26 @@ You are resuming work on the Kosmos project after a context compaction. The prev
 | #60 | Figure Generation | `FigureManager` class + code template integration |
 | #61 | Jupyter Notebook Generation | `NotebookGenerator` class + nbformat integration |
 | #70 | Null Model Statistical Validation | `NullModelValidator` class + ScholarEval integration |
+| #63 | Failure Mode Detection | `FailureDetector` class (over-interp, invented metrics, rabbit hole) |
 
 ### Key Files Created/Modified (Recent)
 
 | File | Changes |
 |------|---------|
-| `kosmos/validation/null_model.py` | **NEW** - NullModelValidator, NullModelResult classes (430+ lines) |
-| `kosmos/validation/scholar_eval.py` | Integrated null model validation into evaluate_finding() |
-| `kosmos/world_model/artifacts.py` | Added null_model_result field to Finding |
-| `tests/unit/validation/test_null_model.py` | **NEW** - 45 unit tests |
-| `tests/integration/validation/test_null_validation.py` | **NEW** - 19 integration tests |
+| `kosmos/validation/failure_detector.py` | **NEW** - FailureDetector, FailureDetectionResult, FailureModeScore (350+ lines) |
+| `kosmos/validation/__init__.py` | Exported failure detector classes |
+| `kosmos/world_model/artifacts.py` | Added failure_detection_result field to Finding |
+| `tests/unit/validation/test_failure_detector.py` | **NEW** - 60 unit tests |
+| `tests/integration/validation/test_failure_detection_pipeline.py` | **NEW** - 22 integration tests |
 
-## Remaining Work (4 gaps)
+## Remaining Work (3 gaps)
 
 ### Implementation Order
 
 | Phase | Order | Issue | Description | Status |
 |-------|-------|-------|-------------|--------|
-| 3 | 5 | #70 | Null Model Statistical Validation | ✅ Complete |
-| 3 | 6 | #63 | Failure Mode Detection | **Next** |
-| 4 | 7 | #62 | Code Line Provenance | Pending |
+| 3 | 6 | #63 | Failure Mode Detection | ✅ Complete |
+| 4 | 7 | #62 | Code Line Provenance | **Next** |
 | 5 | 8 | #64 | Multi-Run Convergence | Pending |
 | 5 | 9 | #65 | Paper Accuracy Validation | Pending |
 
@@ -55,69 +55,68 @@ You are resuming work on the Kosmos project after a context compaction. The prev
 ## Key Documentation
 
 - `docs/CHECKPOINT.md` - Full session summary
-- `docs/PAPER_IMPLEMENTATION_GAPS.md` - 17 tracked gaps (13 complete)
-- `/home/jim/.claude/plans/peppy-floating-feather.md` - Full implementation plan
+- `docs/PAPER_IMPLEMENTATION_GAPS.md` - 17 tracked gaps (14 complete)
+- `/home/jim/.claude/plans/groovy-questing-allen.md` - Failure mode detection plan
 - GitHub Issues #54-#70 - Detailed tracking
 
 ## Quick Verification Commands
 
 ```bash
-# Verify null model validation
+# Verify failure detection
 python -c "
-from kosmos.validation import NullModelValidator, NullModelResult, ScholarEvalValidator
+from kosmos.validation import FailureDetector, FailureDetectionResult, FailureModeScore
 
-# Test NullModelValidator
-validator = NullModelValidator(n_permutations=100, random_seed=42)
+# Test FailureDetector
+detector = FailureDetector()
 finding = {
+    'finding_id': 'test_001',
+    'summary': 'Genetic analysis shows association with cancer susceptibility',
     'statistics': {
-        'test_type': 't_test',
-        'statistic': 3.5,
         'p_value': 0.001,
-        'degrees_of_freedom': 50
-    }
+        'effect_size': 0.7,
+        'sample_size': 150,
+    },
+    'interpretation': 'Results suggest genetic factors contribute to cancer risk.',
 }
-result = validator.validate_finding(finding)
-print(f'Null model passes: {result.passes_null_test}')
-print(f'Persists in noise: {result.persists_in_noise}')
-print(f'P-value: {result.permutation_p_value:.4f}')
-
-# Test ScholarEval integration
-scholar = ScholarEvalValidator()
-score = scholar.evaluate_finding(finding)
-print(f'ScholarEval includes null_model_result: {score.null_model_result is not None}')
-print(f'Statistical validity: {score.statistical_validity}')
+context = {
+    'research_question': 'What genetic factors are associated with cancer susceptibility?',
+}
+result = detector.detect_failures(finding, context)
+print(f'Passes validation: {result.passes_validation}')
+print(f'Over-interpretation score: {result.over_interpretation.score:.3f}')
+print(f'Invented metrics score: {result.invented_metrics.score:.3f}')
+print(f'Rabbit hole score: {result.rabbit_hole.score:.3f}')
 print('All imports successful')
 "
 
 # Run tests
-python -m pytest tests/unit/validation/test_null_model.py -v --tb=short
-python -m pytest tests/integration/validation/test_null_validation.py -v --tb=short
+python -m pytest tests/unit/validation/test_failure_detector.py -v --tb=short
+python -m pytest tests/integration/validation/test_failure_detection_pipeline.py -v --tb=short
 ```
 
 ## Resume Command
 
 Start by reading the checkpoint:
 ```
-Read docs/CHECKPOINT.md and docs/PAPER_IMPLEMENTATION_GAPS.md, then continue with the next item: #63 - Failure Mode Detection
+Read docs/CHECKPOINT.md and docs/PAPER_IMPLEMENTATION_GAPS.md, then continue with the next item: #62 - Code Line Provenance
 ```
 
 ## Progress Summary
 
-**13/17 gaps fixed (76% complete)**
+**14/17 gaps fixed (82% complete)**
 
 | Priority | Status |
 |----------|--------|
 | BLOCKER | 3/3 complete ✅ |
 | Critical | 5/5 complete ✅ |
 | High | 5/5 complete ✅ |
-| Medium | 0/2 remaining |
+| Medium | 1/2 complete |
 | Low | 0/2 remaining |
 
 ## Next Step
 
-Continue with **#63 - Failure Mode Detection**:
-- Create `FailureDetector` class for identifying AI failure modes
-- Implement over-interpretation detection (confidence score for claims vs evidence)
-- Validate that claimed metrics exist in data (invented metrics detection)
-- Add rabbit hole detection (relevance to original research question)
-- Integrate with validation framework
+Continue with **#62 - Code Line Provenance**:
+- Add `source_file` and `line_number` fields to findings
+- Enable hyperlinks from reports to source code
+- Create provenance chain: finding → code → hypothesis
+- Track which code produced which findings
