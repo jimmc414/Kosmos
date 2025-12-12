@@ -1,6 +1,14 @@
-# Kosmos X-Ray Export
+# Kosmos X-Ray Export (Enhanced)
 
 Portable context-efficient codebase exploration system for AI programmers.
+
+## Enhanced Features (v2)
+- **Pydantic/dataclass field extraction** - `name: str = Field(...)` now visible
+- **Decorator support** - `@tool`, `@dataclass`, `@agent.register`
+- **Global constants** - `SYSTEM_PROMPT = "..."`, `CONFIG = {...}`
+- **Line numbers** - `def method(): ...  # L42` for precise navigation
+- **Mermaid diagrams** - `--mermaid` flag for dynamic architecture visualization
+- **Import verification** - Agent verifies entry points are importable
 
 ## Contents
 
