@@ -45,3 +45,9 @@ repos:
         pass_filenames: false
         stages: [pre-push]
         always_run: true
+  
+  - repo: https://github.com/codespell-project/codespell
+    # Configuration for codespell is in .pre-commit-config.yaml
+    rev: v2.4.1
+    hooks:
+    - id: codespell
