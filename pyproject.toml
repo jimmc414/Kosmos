@@ -297,7 +297,9 @@ exclude = [
 
 [tool.codespell]
 # Ref: https://github.com/codespell-project/codespell#using-a-config-file
-skip = '.git*,*.pdf,*.lock'
+skip = '.git*,*.pdf,*.svg,*.css,*.xsd,*.lock,.cache,.npm,*.egg-info,*/build/*,venvs'
 check-hidden = true
-# ignore-regex = ''
-# ignore-words-list = ''
+# Ignore camelCase and PascalCase identifiers (common in code)
+ignore-regex = '\b[a-z]+[A-Z]\w*\b|\b[A-Z][a-z]+[A-Z]\w*\b'
+# Scientific/medical domain terms, code identifiers, and abbreviations
+ignore-words-list = 'abd,abnd,acn,adaptee,aks,als,anc,associat,atomate,blosum,brite,caf,cafs,checkin,commun,coo,edn,ehr,experim,fallow,formate,fpr,generat,hsa,infarction,inh,ist,ket,lod,magent,mape,ment,namd,nd,ned,observ,oce,ois,ontop,ot,otu,pecific,preced,pre-emptive,pres,promis,provid,re-use,reacher,recuse,requency,sav,scarches,sems,ser,simpy,slac,som,stard,strat,te,technik,theis,theses,trough,ture,unparseable,vailable,varian,vermillion,whis'
