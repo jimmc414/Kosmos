@@ -27,7 +27,7 @@ Status values: `todo`, `in progress`, `done`, `blocked` (reason in Notes). Work 
 | 6 | P0-6 | LogLog and ML templates self-contained | 5 / P0-6 | done | Same module-variable pattern as P0-5; LogLog also sets effect_size = spearman_rho. Extra stale assertion updated: test_ml_code_generation expected run_experiment/cross_validate, now cross_val_score. Section 8 step 4's `grep -c DataAnalyzer` prints 1, not 0: the remaining hit is P0-1's negative assertion `"DataAnalyzer" not in prompt`. |
 | 7 | P0-CHECK | Build sandbox image; live end-of-P0 DeepSeek run | 5 / "End-of-P0 check"; 8 / steps 4b, 5 | todo | Live, DeepSeek, `--budget 1`. No code commit unless a fix is needed; record outcome and cost here |
 | 8 | P1-1 | Verdict and hypothesis status persisted | 5 / P1-1 | done | Helper `_db_result_to_experiment_result` sits just above `_handle_analyze_result_action`; P1-4 reuses it. The DB-backed director fixture moved to tests/unit/agents/conftest.py as `db_director` (constants H_ID, EXP_ID, CODE importable from tests.unit.agents.conftest). |
-| 9 | P1-2 | Leave REFINING after every refinement pass | 5 / P1-2 | todo | |
+| 9 | P1-2 | Leave REFINING after every refinement pass | 5 / P1-2 | done | Loop-closure test needs an untested hypothesis in the pool: with none, decide_next_action in REFINING converges before refining, so the dead end only reproduces while untested work remains. `_leave_refining` sits just above `_handle_refine_hypothesis_action`. |
 | 10 | P1-3 | Error recovery never blocks the event loop | 5 / P1-3 | todo | |
 | 11 | P1-4 | Convergence detector gets real hypotheses and results | 5 / P1-4 | todo | |
 | 12 | P1-5 | `--budget` armed, provider calls recorded, per-model pricing | 5 / P1-5 | todo | |

@@ -1913,6 +1913,26 @@ class ResearchDirectorAgent(BaseAgent):
                 error_details={"result_id": result_id}
             )
 
+    def _leave_refining(self) -> None:
+        """Exit REFINING after a refinement pass.
+
+        Goes to DESIGNING_EXPERIMENTS when untested hypotheses remain, else to
+        GENERATING_HYPOTHESES. Does nothing outside REFINING, so the recovery paths
+        that request refinement from EXECUTING or ANALYZING are unaffected.
+        """
+        with self._research_plan_context():
+            untested = self.research_plan.get_untested_hypotheses()
+        target = (
+            WorkflowState.DESIGNING_EXPERIMENTS if untested
+            else WorkflowState.GENERATING_HYPOTHESES
+        )
+        with self._workflow_context():
+            if self.workflow.current_state == WorkflowState.REFINING:
+                self.workflow.transition_to(
+                    target,
+                    action=f"Refinement complete; {len(untested)} untested hypotheses"
+                )
+
     async def _handle_refine_hypothesis_action(self, hypothesis_id: str):
         """
         Handle REFINE_HYPOTHESIS action by calling HypothesisRefiner directly.
@@ -1946,6 +1966,7 @@ class ResearchDirectorAgent(BaseAgent):
                 db_hyp = db_get_hypothesis(session, hypothesis_id, with_experiments=True)
                 if not db_hyp:
                     logger.warning(f"Hypothesis {hypothesis_id} not found, skipping refinement")
+                    self._leave_refining()
                     return
 
                 pydantic_hyp = PydanticHypothesis(
@@ -1978,6 +1999,7 @@ class ResearchDirectorAgent(BaseAgent):
                 with self._strategy_stats_context():
                     self.strategy_stats["hypothesis_refinement"]["attempts"] += 1
                 self.rollout_tracker.increment("hypothesis_refinement")
+                self._leave_refining()
                 return
 
             # Evaluate hypothesis status
@@ -2063,6 +2085,7 @@ class ResearchDirectorAgent(BaseAgent):
                     self.strategy_stats["hypothesis_refinement"]["successes"] += 1
 
             logger.info(f"Hypothesis refinement: {len(refined_ids)} refined, {len(retired_ids)} retired")
+            self._leave_refining()
 
         except Exception as e:
             logger.error(f"Direct hypothesis refinement failed: {e}", exc_info=True)

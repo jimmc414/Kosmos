@@ -262,3 +262,74 @@ class TestSkillsIntegration:
         """get_skills_context should return a string."""
         result = mock_director.get_skills_context()
         assert isinstance(result, str)
+
+
+class TestLeaveRefining:
+    """P1-2: every refinement pass leaves REFINING."""
+
+    @pytest.fixture
+    def refining_director(self, mock_director):
+        from kosmos.core.workflow import ResearchPlan
+
+        mock_director.research_plan = ResearchPlan(research_question="q", max_iterations=10)
+        mock_director.research_plan.add_hypothesis("h1")
+        mock_director.research_plan.mark_tested("h1")
+        mock_director.workflow.current_state = WorkflowState.REFINING
+        mock_director._hypothesis_refiner = Mock()
+        return mock_director
+
+    @staticmethod
+    async def _refine_missing_hypothesis(director):
+        session = MagicMock()
+        session.__enter__ = Mock(return_value=session)
+        session.__exit__ = Mock(return_value=False)
+        with patch('kosmos.agents.research_director.get_session', return_value=session), \
+             patch('kosmos.db.operations.get_hypothesis', return_value=None):
+            await director._handle_refine_hypothesis_action("h1")
+
+    async def test_no_untested_goes_to_generation(self, refining_director):
+        await self._refine_missing_hypothesis(refining_director)
+
+        refining_director.workflow.transition_to.assert_called_once()
+        assert refining_director.workflow.transition_to.call_args.args[0] == WorkflowState.GENERATING_HYPOTHESES
+
+    async def test_untested_goes_to_design(self, refining_director):
+        refining_director.research_plan.add_hypothesis("h2")
+
+        await self._refine_missing_hypothesis(refining_director)
+
+        assert refining_director.workflow.transition_to.call_args.args[0] == WorkflowState.DESIGNING_EXPERIMENTS
+
+    async def test_outside_refining_does_not_transition(self, refining_director):
+        refining_director.workflow.current_state = WorkflowState.EXECUTING
+
+        await self._refine_missing_hypothesis(refining_director)
+
+        refining_director.workflow.transition_to.assert_not_called()
+
+    async def test_loop_closes_after_refinement(self, db_director):
+        from kosmos.core.workflow import ResearchWorkflow
+        from kosmos.db import get_session, operations
+        from kosmos.hypothesis.refiner import RetirementDecision
+        from tests.unit.agents.conftest import EXP_ID, H_ID
+
+        with get_session() as session:
+            operations.create_result(
+                session, id="res-loop-1", experiment_id=EXP_ID,
+                data={"execution_success": True}, p_value=0.2,
+            )
+        db_director.research_plan.mark_tested(H_ID)
+        db_director.research_plan.add_hypothesis("h-untested")  # the dead end needs untested work
+        db_director.research_plan.experiment_queue.clear()
+        db_director.workflow = ResearchWorkflow(
+            initial_state=WorkflowState.REFINING, research_plan=db_director.research_plan
+        )
+        db_director._hypothesis_refiner = Mock(
+            evaluate_hypothesis_status=Mock(return_value=RetirementDecision.CONTINUE_TESTING)
+        )
+
+        assert db_director.decide_next_action() == NextAction.REFINE_HYPOTHESIS
+        await db_director._handle_refine_hypothesis_action(H_ID)
+
+        assert db_director.workflow.current_state == WorkflowState.DESIGNING_EXPERIMENTS
+        assert db_director.decide_next_action() == NextAction.DESIGN_EXPERIMENT
