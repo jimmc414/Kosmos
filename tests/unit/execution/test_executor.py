@@ -451,6 +451,21 @@ class TestSandboxIntegration:
         for call in mock_sandbox.execute.call_args_list:
             assert call.args[0].count("RESULT:") == 1
 
+    @patch('kosmos.execution.executor.SANDBOX_AVAILABLE', True)
+    @patch('kosmos.execution.executor.DockerSandbox')
+    def test_execute_with_data_uses_container_path(self, mock_sandbox_class):
+        """In the sandbox the mounted path wins and the host path never reaches the code (P0-3)."""
+        mock_sandbox = mock_sandbox_class.return_value
+        mock_sandbox.execute.return_value = SandboxExecutionResult(success=True)
+        executor = CodeExecutor(use_sandbox=True)
+
+        executor.execute_with_data("results={'d': data_path}", "/host/dir/test_data.csv")
+
+        code = mock_sandbox.execute.call_args.args[0]
+        assert code.splitlines()[0] == "data_path = '/workspace/data/test_data.csv'"
+        assert "/host/dir" not in code
+        assert mock_sandbox.execute.call_args.kwargs["data_files"] == {"test_data.csv": "/host/dir/test_data.csv"}
+
     @patch('kosmos.execution.executor.SANDBOX_AVAILABLE', False)
     def test_executor_graceful_fallback_when_sandbox_unavailable(self):
         """Test executor gracefully falls back when sandbox unavailable (F-17)."""

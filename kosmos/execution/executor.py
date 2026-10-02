@@ -674,16 +674,18 @@ class CodeExecutor:
             ExecutionResult
 
         Note:
-            The data_path variable is prepended to code and also provided
-            in local_vars for templates that use `pd.read_csv(data_path)`.
+            On the host path the data_path assignment is prepended to the code.
+            In the sandbox, _execute_in_sandbox mounts the file and assigns the
+            container path instead.
         """
-        # Prepend data_path assignment so templates can use it (Issue #51)
-        # This ensures data_path is defined even if templates use it directly
-        augmented_code = f"# Data path injected by executor\ndata_path = {repr(data_path)}\n\n{code}"
-
-        # Also inject as local variable for safety
         local_vars = {'data_path': data_path}
+        if self.use_sandbox:
+            # _execute_in_sandbox assigns data_path to the container mount; a host path
+            # prepended here would override it and point at a file the container cannot see
+            return self.execute(code, local_vars, retry_on_error)
 
+        # Prepend data_path assignment so templates can use it (Issue #51)
+        augmented_code = f"# Data path injected by executor\ndata_path = {repr(data_path)}\n\n{code}"
         return self.execute(augmented_code, local_vars, retry_on_error)
 
 
