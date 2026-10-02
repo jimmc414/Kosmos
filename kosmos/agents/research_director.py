@@ -1748,6 +1748,37 @@ class ResearchDirectorAgent(BaseAgent):
                 error_details={"protocol_id": protocol_id}
             )
 
+    def _db_result_to_experiment_result(self, db_r):
+        """Build a minimal ExperimentResult from a DB result row.
+
+        A row whose data records execution_success False becomes ResultStatus.FAILED.
+        """
+        import sys as _sys
+        import platform as _platform
+        from kosmos.models.result import ExperimentResult, ResultStatus, ExecutionMetadata
+
+        _now = datetime.now(timezone.utc)
+        failed = (db_r.data or {}).get("execution_success") is False
+        return ExperimentResult(
+            id=db_r.id,
+            experiment_id=db_r.experiment_id,
+            protocol_id=db_r.experiment_id,
+            status=ResultStatus.FAILED if failed else ResultStatus.SUCCESS,
+            raw_data=db_r.data or {},
+            primary_p_value=db_r.p_value,
+            primary_effect_size=db_r.effect_size,
+            supports_hypothesis=db_r.supports_hypothesis,
+            metadata=ExecutionMetadata(
+                start_time=_now,
+                end_time=_now,
+                duration_seconds=0.0,
+                python_version=_sys.version,
+                platform=_platform.platform(),
+                experiment_id=db_r.experiment_id,
+                protocol_id=db_r.experiment_id,
+            ),
+        )
+
     async def _handle_analyze_result_action(self, result_id: str):
         """
         Handle ANALYZE_RESULT action by calling DataAnalystAgent directly.
@@ -1783,28 +1814,7 @@ class ResearchDirectorAgent(BaseAgent):
                     hypothesis_id = experiment.hypothesis_id
 
                 # Build minimal ExperimentResult from DB fields
-                import sys as _sys
-                import platform as _platform
-                _now = datetime.now(timezone.utc)
-                pydantic_result = ExperimentResult(
-                    id=db_result.id,
-                    experiment_id=db_result.experiment_id,
-                    protocol_id=db_result.experiment_id,
-                    status=ResultStatus.SUCCESS,
-                    raw_data=db_result.data or {},
-                    primary_p_value=db_result.p_value,
-                    primary_effect_size=db_result.effect_size,
-                    supports_hypothesis=db_result.supports_hypothesis,
-                    metadata=ExecutionMetadata(
-                        start_time=_now,
-                        end_time=_now,
-                        duration_seconds=0.0,
-                        python_version=_sys.version,
-                        platform=_platform.platform(),
-                        experiment_id=db_result.experiment_id,
-                        protocol_id=db_result.experiment_id,
-                    ),
-                )
+                pydantic_result = self._db_result_to_experiment_result(db_result)
 
                 # Load hypothesis if available
                 if hypothesis_id:
@@ -1818,20 +1828,45 @@ class ResearchDirectorAgent(BaseAgent):
                             domain=db_hyp.domain or self.domain or "general",
                         )
 
-            # Call data analyst
-            interpretation = self._data_analyst.interpret_results(
-                result=pydantic_result,
-                hypothesis=pydantic_hyp,
-            )
+            # A failed execution has nothing to interpret; record it without an LLM call
+            if pydantic_result.status == ResultStatus.FAILED:
+                _d = pydantic_result.raw_data
+                hypothesis_supported, confidence = None, 0.0
+                summary = f"Execution failed: {_d.get('error_type')}: {_d.get('error')}"
+                key_findings = []
+            else:
+                interpretation = self._data_analyst.interpret_results(
+                    result=pydantic_result,
+                    hypothesis=pydantic_hyp,
+                )
+                hypothesis_supported = interpretation.hypothesis_supported
+                confidence = interpretation.confidence if interpretation.confidence else 0.8
+                summary = interpretation.summary
+                key_findings = list(interpretation.key_findings or [])
 
             # Track rollout (Issue #58)
             self.rollout_tracker.increment("data_analysis")
 
-            # Extract interpretation fields
-            hypothesis_supported = interpretation.hypothesis_supported
-            confidence = interpretation.confidence if interpretation.confidence else 0.8
             p_value = pydantic_result.primary_p_value
             effect_size = pydantic_result.primary_effect_size
+
+            # Persist the verdict on the result row and the hypothesis status
+            from kosmos.db.operations import update_result_analysis, update_hypothesis_status
+            from kosmos.db.models import HypothesisStatus as DBHypothesisStatus
+            with get_session() as session:
+                update_result_analysis(
+                    session, result_id,
+                    supports_hypothesis=hypothesis_supported,
+                    interpretation=summary,
+                    key_findings=key_findings,
+                )
+                if hypothesis_id:
+                    update_hypothesis_status(
+                        session, hypothesis_id,
+                        DBHypothesisStatus.SUPPORTED if hypothesis_supported is True
+                        else DBHypothesisStatus.REJECTED if hypothesis_supported is False
+                        else DBHypothesisStatus.INCONCLUSIVE,
+                    )
 
             logger.info(
                 f"Result {result_id} interpretation: "
@@ -1930,29 +1965,7 @@ class ResearchDirectorAgent(BaseAgent):
                         db_results = get_results_for_experiment(session, exp.id)
                         for db_r in db_results:
                             try:
-                                import sys as _sys
-                                import platform as _platform
-                                _now = datetime.now(timezone.utc)
-                                pydantic_r = ExperimentResult(
-                                    id=db_r.id,
-                                    experiment_id=db_r.experiment_id,
-                                    protocol_id=db_r.experiment_id,
-                                    status=ResultStatus.SUCCESS,
-                                    raw_data=db_r.data or {},
-                                    primary_p_value=db_r.p_value,
-                                    primary_effect_size=db_r.effect_size,
-                                    supports_hypothesis=db_r.supports_hypothesis,
-                                    metadata=ExecutionMetadata(
-                                        start_time=_now,
-                                        end_time=_now,
-                                        duration_seconds=0.0,
-                                        python_version=_sys.version,
-                                        platform=_platform.platform(),
-                                        experiment_id=db_r.experiment_id,
-                                        protocol_id=db_r.experiment_id,
-                                    ),
-                                )
-                                results_history.append(pydantic_r)
+                                results_history.append(self._db_result_to_experiment_result(db_r))
                             except Exception as conv_err:
                                 logger.warning(f"Failed to convert result {db_r.id}: {conv_err}")
 

@@ -391,6 +391,35 @@ def get_result(session: Session, result_id: str, with_experiment: bool = False) 
     return query.first()
 
 
+def update_result_analysis(
+    session: Session,
+    result_id: str,
+    supports_hypothesis: Optional[bool] = None,
+    interpretation: Optional[str] = None,
+    key_findings: Optional[List[str]] = None,
+) -> Result:
+    """Persist the analysis verdict for a result.
+
+    supports_hypothesis is always written, so None records an inconclusive verdict.
+    """
+    result = get_result(session, result_id)
+    if not result:
+        raise ValueError(f"Result {result_id} not found")
+
+    result.supports_hypothesis = supports_hypothesis
+    if interpretation is not None:
+        result.interpretation = interpretation
+    if key_findings is not None:
+        _validate_json_list(key_findings, "key_findings", required=False)
+        result.key_findings = key_findings
+
+    session.commit()
+    session.refresh(result)
+
+    logger.info(f"Updated result {result_id} analysis: supports_hypothesis={supports_hypothesis}")
+    return result
+
+
 def get_results_for_experiment(
     session: Session,
     experiment_id: str,

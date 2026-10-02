@@ -547,6 +547,11 @@ Format your response as JSON with the following structure:
 
     def _create_fallback_interpretation(self, result: ExperimentResult) -> ResultInterpretation:
         """Create fallback interpretation if Claude fails."""
+        _p = result.primary_p_value
+        if _p is None:
+            _significance = 'undetermined'
+        else:
+            _significance = 'significant' if _p < 0.05 else 'non-significant'
         return ResultInterpretation(
             experiment_id=result.experiment_id,
             hypothesis_supported=result.supports_hypothesis,
@@ -557,8 +562,7 @@ Format your response as JSON with the following structure:
                 f"P-value: {result.primary_p_value}",
                 f"Effect size: {result.primary_effect_size}"
             ],
-            significance_interpretation=f"P-value of {result.primary_p_value} indicates "
-                                       f"{'significant' if result.primary_p_value < 0.05 else 'non-significant'} results",
+            significance_interpretation=f"P-value of {_p} indicates {_significance} results",
             biological_significance=None,
             comparison_to_prior_work=None,
             potential_confounds=["Automated analysis - manual review recommended"],

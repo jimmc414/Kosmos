@@ -6,123 +6,21 @@ experiment status for both outcomes, keep the executed code, pin the sandbox
 image from config, and halt the run when the sandbox is unavailable.
 """
 
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
 
-import kosmos.db as kosmos_db
-from kosmos.agents.research_director import ResearchDirectorAgent
-from kosmos.core.workflow import ResearchPlan, WorkflowState
-from kosmos.db import get_session, init_database
-from kosmos.db import operations
+from kosmos.core.workflow import WorkflowState
+from kosmos.db import get_session
 from kosmos.db.models import Experiment, ExperimentStatus, Result
 from kosmos.execution.executor import ExecutionResult
-from kosmos.models.experiment import (
-    ExperimentProtocol,
-    ExperimentType,
-    ProtocolStep,
-    ResourceRequirements,
-    StatisticalTest,
-    StatisticalTestSpec,
-    Variable,
-    VariableType,
-)
-
-H_ID = "hyp-exec-1"
-EXP_ID = "exp-exec-1"
-CODE = "results = {}"
-
-
-def _ttest_protocol() -> ExperimentProtocol:
-    """Same shape as the ttest_protocol fixture in tests/unit/execution/test_code_generator.py."""
-    return ExperimentProtocol(
-        id=EXP_ID,
-        name="T-Test Experiment Protocol",
-        hypothesis_id=H_ID,
-        domain="statistics",
-        description="T-test comparison experiment for statistical analysis of treatment vs control groups",
-        objective="Compare means between two groups using T-test",
-        experiment_type=ExperimentType.DATA_ANALYSIS,
-        statistical_tests=[
-            StatisticalTestSpec(
-                test_type=StatisticalTest.T_TEST,
-                description="Two-sample T-test for group comparison",
-                null_hypothesis="No difference between group means",
-                variables=["group", "measurement"],
-            )
-        ],
-        steps=[
-            ProtocolStep(
-                step_number=1,
-                title="Execute T-test",
-                description="Load data and run T-test analysis",
-                action="run_ttest",
-                expected_duration_minutes=5,
-            )
-        ],
-        variables={
-            "group": Variable(name="group", type=VariableType.INDEPENDENT, description="Group variable"),
-            "measurement": Variable(name="measurement", type=VariableType.DEPENDENT, description="Measurement"),
-        },
-        resource_requirements=ResourceRequirements(
-            estimated_runtime_seconds=300, cpu_cores=1, memory_gb=1, storage_gb=0.1
-        ),
-        data_requirements={"format": "csv", "columns": ["group", "measurement"]},
-        expected_duration_minutes=10,
-    )
+from tests.unit.agents.conftest import CODE, EXP_ID
 
 
 @pytest.fixture
-def in_memory_db():
-    """Point kosmos.db at a fresh in-memory SQLite database; restore the old engine afterwards."""
-    saved = (kosmos_db._engine, kosmos_db._SessionLocal)
-    init_database("sqlite:///:memory:")
-    yield
-    kosmos_db.reset_database()
-    kosmos_db._engine, kosmos_db._SessionLocal = saved
-
-
-@pytest.fixture
-def director(in_memory_db):
-    """A director with a real ResearchPlan, a mocked workflow, and one seeded experiment."""
-    with patch('kosmos.agents.research_director.get_client') as mock_client, \
-         patch('kosmos.agents.research_director.get_world_model') as mock_wm, \
-         patch('kosmos.agents.research_director.SkillLoader') as mock_skills, \
-         patch('kosmos.db.init_from_config'):
-        mock_client.return_value = MagicMock()
-        mock_wm.return_value = MagicMock()
-        mock_skills.return_value = MagicMock()
-        mock_skills.return_value.load_skills_for_task.return_value = ""
-
-        d = ResearchDirectorAgent(
-            research_question="Does CO2 predict temperature?",
-            domain="climate",
-            config={"max_iterations": 10},
-        )
-
-        proto = _ttest_protocol()
-        protocol_json = proto.to_dict()
-        ExperimentProtocol.model_validate(protocol_json)  # round-trip must hold for the handler
-        with get_session() as session:
-            operations.create_hypothesis(
-                session, id=H_ID, research_question="Does CO2 predict temperature?",
-                statement="CO2 concentration predicts the temperature anomaly",
-                rationale="Radiative forcing increases with CO2 concentration",
-                domain="climate",
-            )
-            operations.create_experiment(
-                session, id=EXP_ID, hypothesis_id=H_ID, experiment_type="computational",
-                description="d", protocol=protocol_json, domain="climate",
-            )
-
-        d.research_plan = ResearchPlan(research_question="q", max_iterations=10)
-        d.research_plan.add_hypothesis(H_ID)
-        d.research_plan.add_experiment(EXP_ID)
-        d.workflow = MagicMock()
-        d._code_generator = Mock(generate=Mock(return_value=CODE))
-        d.data_path = "/x/data.csv"
-        yield d
+def director(db_director):
+    return db_director
 
 
 def _rows():
