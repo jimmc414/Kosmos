@@ -55,7 +55,7 @@ class ResultsViewer:
         """
         run_id = research_data.get("id", "Unknown")
         question = research_data.get("question", "Unknown")
-        domain = research_data.get("domain", "general")
+        domain = research_data.get("domain") or "general"  # key is present with None when no --domain
         state = research_data.get("state", "Unknown")
         iteration = research_data.get("current_iteration", 0)
         max_iterations = research_data.get("max_iterations", 10)

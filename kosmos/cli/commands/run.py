@@ -460,7 +460,7 @@ async def run_with_progress_async(
             results = {
                 "id": f"research_{int(time.time())}",
                 "question": question,
-                "domain": final_status.get("domain", "auto"),
+                "domain": final_status.get("domain") or "auto",
                 "state": final_status.get("workflow_state", "COMPLETED"),
                 "current_iteration": final_status.get("iteration", 0),
                 "max_iterations": max_iterations,
