@@ -6,7 +6,7 @@ experiment status for both outcomes, keep the executed code, pin the sandbox
 image from config, and halt the run when the sandbox is unavailable.
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -140,3 +140,35 @@ async def test_sandbox_image_comes_from_config(director, configured, expected):
         await director._handle_execute_experiment_action(EXP_ID)
 
     assert mock_cls.call_args.kwargs["sandbox_config"] == {"image": expected}
+
+
+def test_convergence_check_receives_hypotheses_and_results(director):
+    """P1-4: the detector gets the real hypotheses and results, not empty lists."""
+    from kosmos.db import operations
+    from kosmos.models.result import ResultStatus
+    from tests.unit.agents.conftest import H_ID
+
+    with get_session() as session:
+        operations.create_hypothesis(
+            session, id="hyp-exec-2", research_question="Does CO2 predict temperature?",
+            statement="Solar irradiance explains the temperature anomaly",
+            rationale="Solar forcing changes the energy balance of the climate system",
+            domain="climate",
+        )
+        operations.create_result(
+            session, id="res-conv-1", experiment_id=EXP_ID,
+            data={"execution_success": True}, supports_hypothesis=True,
+        )
+    director.research_plan.hypothesis_pool = [H_ID, "hyp-exec-2"]
+    director.research_plan.completed_experiments = [EXP_ID]
+    director.convergence_detector = Mock(check_convergence=Mock(return_value=MagicMock(
+        should_stop=False, reason=MagicMock(value="x"), details="",
+    )))
+
+    director._check_convergence_direct()
+
+    kwargs = director.convergence_detector.check_convergence.call_args.kwargs
+    assert len(kwargs["hypotheses"]) == 2
+    assert len(kwargs["results"]) == 1
+    assert kwargs["results"][0].supports_hypothesis is True
+    assert kwargs["results"][0].status == ResultStatus.SUCCESS

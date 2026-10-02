@@ -1254,7 +1254,8 @@ class ResearchDirectorAgent(BaseAgent):
         # Try to load actual hypothesis objects if available
         try:
             from kosmos.db import get_session
-            from kosmos.db.models import HypothesisModel
+            from kosmos.db.models import Hypothesis as HypothesisModel
+            from kosmos.db.operations import get_results_for_experiment
             from kosmos.models.hypothesis import Hypothesis
 
             with get_session() as session:
@@ -1264,18 +1265,27 @@ class ResearchDirectorAgent(BaseAgent):
                     db_hyps = session.query(HypothesisModel).filter(
                         HypothesisModel.id.in_(hyp_ids)
                     ).all()
-                    hypotheses = [
-                        Hypothesis(
-                            id=h.id,
-                            research_question=h.research_question or self.research_question,
-                            statement=h.statement,
-                            rationale=h.rationale or "",
-                            domain=h.domain or self.domain or "general"
-                        )
-                        for h in db_hyps
-                    ]
+                    for h in db_hyps:
+                        try:
+                            hypotheses.append(Hypothesis(
+                                id=h.id,
+                                research_question=h.research_question or self.research_question,
+                                statement=h.statement,
+                                rationale=h.rationale or "",
+                                domain=h.domain or self.domain or "general"
+                            ))
+                        except Exception as conv_err:  # statement/rationale minimum lengths
+                            logger.debug(f"Skipping hypothesis {h.id} for convergence: {conv_err}")
+
+                # Results of completed experiments feed discovery rate and consistency
+                for exp_id in list(self.research_plan.completed_experiments)[-100:]:
+                    for db_r in get_results_for_experiment(session, exp_id):
+                        try:
+                            results.append(self._db_result_to_experiment_result(db_r))
+                        except Exception as conv_err:
+                            logger.debug(f"Skipping result {db_r.id} for convergence: {conv_err}")
         except Exception as e:
-            logger.debug(f"Could not load hypotheses for convergence check: {e}")
+            logger.warning(f"Could not load hypotheses and results for convergence check: {e}")
 
         # Perform convergence check (pass accumulated LLM cost if available)
         provider_cost = getattr(self.llm_client, 'total_cost_usd', None)
