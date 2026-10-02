@@ -183,6 +183,16 @@ LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 ```
 
+`.env` sets the default. Override it for a single run with `--provider` and `--model`:
+
+```bash
+kosmos run "Question" --provider deepseek
+kosmos run "Question" --provider claude-code --model opus     # Claude Code login, no API key
+kosmos run "Question" --provider anthropic --model sonnet     # needs KOSMOS_ANTHROPIC_API_KEY
+```
+
+Model aliases: `opus` (claude-opus-5-5), `sonnet` (claude-sonnet-5-5), `haiku` (claude-haiku-4-5), `fable` (claude-fable-5-1), `deepseek-chat`, `deepseek-reasoner`. A mismatched pair such as `--provider deepseek --model opus` is rejected with the flag to use instead. `kosmos doctor` reports the default provider and which credentials are set.
+
 ### Budget Control
 
 ```bash

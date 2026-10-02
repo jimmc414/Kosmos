@@ -13,6 +13,7 @@ import sys
 import time
 import logging
 import asyncio
+from enum import Enum
 from typing import Optional
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,14 @@ from kosmos.core.stage_tracker import get_stage_tracker
 logger = logging.getLogger(__name__)
 
 
+class ProviderOption(str, Enum):
+    """Values accepted by `kosmos run --provider`."""
+    DEEPSEEK = "deepseek"
+    LITELLM = "litellm"
+    ANTHROPIC = "anthropic"
+    CLAUDE_CODE = "claude-code"
+
+
 def run_research(
     question: Optional[str] = typer.Argument(None, help="Research question to investigate"),
     domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Research domain (biology, neuroscience, materials, etc.)"),
@@ -59,6 +68,14 @@ def run_research(
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Save results to file (JSON or Markdown)"),
     stream: bool = typer.Option(False, "--stream", "-s", help="Enable real-time event streaming display"),
     stream_tokens: bool = typer.Option(True, "--stream-tokens/--no-stream-tokens", help="Show LLM token streaming (with --stream)"),
+    provider: Optional[ProviderOption] = typer.Option(
+        None, "--provider", "-P", case_sensitive=False,
+        help="LLM provider for this run (default: LLM_PROVIDER in .env): deepseek, litellm, anthropic (API key), claude-code (Claude Code login)",
+    ),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m",
+        help="Model id or alias for this run: opus, sonnet, haiku, fable, deepseek-chat, deepseek-reasoner",
+    ),
 ):
     """
     Run autonomous research on a scientific question.
@@ -82,6 +99,11 @@ def run_research(
 
         # Streaming without token display (just progress events)
         kosmos run "Question" --stream --no-stream-tokens
+
+        # Switch model provider for one run (.env stays the default)
+        kosmos run "Question" --provider deepseek
+        kosmos run "Question" --provider claude-code --model opus
+        kosmos run "Question" --provider anthropic --model sonnet
     """
     # Defaults for settings only available via interactive mode
     auto_model_selection = True
@@ -114,6 +136,19 @@ def run_research(
         print_error(f"Data file not found: {data_path}")
         raise typer.Exit(1)
 
+    # Apply --provider/--model before anything creates an LLM client
+    from kosmos.config import get_config
+    from kosmos.core.providers.selection import ProviderSelectionError, apply_provider_selection
+    if provider is not None or model is not None:
+        try:
+            apply_provider_selection(get_config(), provider.value if provider else None, model)
+        except ProviderSelectionError as e:
+            print_error(str(e), title="Provider")
+            raise typer.Exit(1)
+        from kosmos.core.llm import get_client
+        get_client(reset=True)
+    active_provider, active_model = _active_provider_and_model()
+
     # Show starting message
     console.print()
     console.print(
@@ -122,7 +157,8 @@ def run_research(
             f"**Question:** {question}\n"
             f"**Domain:** {domain or 'auto-detect'}\n"
             f"**Max Iterations:** {max_iterations}\n"
-            f"**Budget:** ${budget} USD" if budget else "**Budget:** No limit",
+            f"**Provider:** {active_provider}  **Model:** {active_model}\n"
+            + (f"**Budget:** ${budget} USD" if budget else "**Budget:** No limit"),
             title=f"[bright_blue]{get_icon('rocket')} Kosmos Research[/bright_blue]",
             border_style="bright_blue",
         )
@@ -214,6 +250,7 @@ def run_research(
 
         if "metrics" in results:
             viewer.display_metrics_summary(results["metrics"])
+        console.print(f"Provider: {active_provider}  Model: {active_model}")
 
         # Export if requested
         if output:
@@ -243,6 +280,17 @@ def run_research(
 
     if halted:
         raise typer.Exit(1)
+
+
+def _active_provider_and_model():
+    """Return (llm_provider, model) from the loaded config, tolerating a partial config."""
+    from kosmos.config import get_config
+    try:
+        config = get_config()
+        return config.llm_provider, config.get_active_model()
+    except Exception as e:
+        logger.debug(f"Could not read active provider: {e}")
+        return "unknown", "unknown"
 
 
 async def run_with_progress_async(

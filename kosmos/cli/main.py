@@ -303,14 +303,33 @@ def doctor():
         except ImportError:
             checks.append((f"Package: {package}", "Missing", False))
 
-    # Check API key based on provider
+    # Check the default LLM provider and the credentials each switchable provider needs
+    from kosmos.core.providers.selection import MODEL_ALIASES, describe_credentials
+    from kosmos.core.providers.claude_code import ClaudeCodeProvider
     llm_provider = os.getenv("LLM_PROVIDER", "anthropic")
+    try:
+        from kosmos.config import get_config as _get_config
+        _cfg = _get_config()
+        llm_provider = _cfg.llm_provider
+        checks.append(("Default LLM Provider (.env)", f"{_cfg.llm_provider} ({_cfg.get_active_model()})", True))
+    except Exception as e:
+        checks.append(("Default LLM Provider (.env)", f"Config error: {e}", False))
+    creds = describe_credentials()
+    anthropic_key = creds["KOSMOS_ANTHROPIC_API_KEY"] or creds["ANTHROPIC_API_KEY"]
+    claude_version = ClaudeCodeProvider.cli_version()
+    provider_ready = {
+        "litellm": creds["DEEPSEEK_API_KEY"] or bool(os.getenv("LITELLM_API_KEY")) or bool(os.getenv("LITELLM_API_BASE")),
+        "anthropic": anthropic_key,
+        "claude_code": claude_version is not None,
+        "openai": bool(os.getenv("OPENAI_API_KEY")),
+    }
+    # Informational rows (never values): what each --provider choice would find
+    for name, is_set in creds.items():
+        checks.append((name, "Set" if is_set else "Not set", True))
+    checks.append(("Claude Code CLI (--provider claude-code)", claude_version or "Not found", True))
     if llm_provider == "openai":
-        api_key_ok = bool(os.getenv("OPENAI_API_KEY"))
-        checks.append(("OpenAI API Key", "Configured" if api_key_ok else "Not set", api_key_ok))
-    else:
-        api_key_ok = bool(os.getenv("ANTHROPIC_API_KEY"))
-        checks.append(("Anthropic API Key", "Configured" if api_key_ok else "Not set", api_key_ok))
+        checks.append(("OpenAI API Key", "Configured" if provider_ready["openai"] else "Not set", provider_ready["openai"]))
+    checks.append(("Default provider credentials", "Ready" if provider_ready.get(llm_provider, True) else "Missing", provider_ready.get(llm_provider, True)))
 
     # Check cache directory
     from kosmos.cli.utils import get_cache_dir
@@ -366,6 +385,9 @@ def doctor():
 
     console.print(table)
     console.print()
+    console.print("Switch providers per run: kosmos run \"Q\" --provider deepseek|litellm|anthropic|claude-code [--model <id or alias>]")
+    console.print("Model aliases: " + ", ".join(f"{k} = {v}" for k, v in MODEL_ALIASES.items()))
+    console.print()
 
     # Show database issues if any
     if db_issues:
@@ -378,7 +400,7 @@ def doctor():
         if llm_provider == "openai":
             console.print("  2. Set OPENAI_API_KEY environment variable")
         else:
-            console.print("  2. Set ANTHROPIC_API_KEY environment variable")
+            console.print("  2. Check LLM_PROVIDER and its credentials in .env")
         console.print("  3. Run: [code]alembic upgrade head[/code]")
         console.print("  4. Or reinstall: [code]make install[/code]")
         console.print()

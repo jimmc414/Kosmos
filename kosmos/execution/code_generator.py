@@ -779,22 +779,15 @@ class ExperimentCodeGenerator:
         self.use_llm = use_llm
         self.llm_enhance_templates = llm_enhance_templates
 
-        # Initialize LLM client with error handling
+        # Use the configured provider (LLM_PROVIDER or kosmos run --provider)
         if use_llm and llm_client is None:
             try:
-                self.llm_client = ClaudeClient()
-            except (ValueError, Exception) as e:
-                logger.warning(f"ClaudeClient failed: {e}. Trying LiteLLM fallback.")
-                try:
-                    from kosmos.core.providers.litellm_provider import LiteLLMProvider
-                    from kosmos.config import get_config
-                    config = get_config()
-                    self.llm_client = LiteLLMProvider(config.get_active_provider_config())
-                    self.use_llm = True
-                except Exception as e2:
-                    logger.warning(f"LiteLLM fallback also failed: {e2}. LLM generation disabled.")
-                    self.llm_client = None
-                    self.use_llm = False
+                from kosmos.core.llm import get_client
+                self.llm_client = get_client()
+            except Exception as e:
+                logger.warning(f"LLM client unavailable: {e}. LLM generation disabled.")
+                self.llm_client = None
+                self.use_llm = False
         else:
             self.llm_client = llm_client if use_llm else None
 
@@ -868,7 +861,7 @@ class ExperimentCodeGenerator:
             response = self.llm_client.generate(prompt)
 
             # Extract code from response (may be in code blocks)
-            code = self._extract_code_from_response(response)
+            code = self._extract_code_from_response(getattr(response, "content", response))
 
             return code
 
