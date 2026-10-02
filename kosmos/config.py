@@ -6,16 +6,31 @@ for all Kosmos components.
 """
 
 from typing import List, Optional, Literal, Union, Annotated
-from pydantic import Field, field_validator, model_validator, BeforeValidator
+from pydantic import AliasChoices, Field, field_validator, model_validator, BeforeValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 import os
 
 from kosmos.utils.compat import model_to_dict
 
-# Claude 4.5 models (November 2025)
-_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-4-5"
+# Current Claude models (October 2026)
+_DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
+_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-5-5"
 _DEFAULT_CLAUDE_HAIKU_MODEL = "claude-haiku-4-5"
+
+# Anthropic API key variables, in lookup order. KOSMOS_ANTHROPIC_API_KEY comes first so a
+# key can be given to Kosmos without exporting ANTHROPIC_API_KEY, which would override
+# a Claude Code subscription login for other tools.
+ANTHROPIC_KEY_ENV_VARS = ("KOSMOS_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+
+
+def _anthropic_key_from_env() -> Optional[str]:
+    """Return the first Anthropic API key found in ANTHROPIC_KEY_ENV_VARS."""
+    for name in ANTHROPIC_KEY_ENV_VARS:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
 
 def parse_comma_separated(v):
     """Parse comma-separated string into list for Pydantic V2 compatibility."""
@@ -34,12 +49,13 @@ class ClaudeConfig(BaseSettings):
     New code should use AnthropicConfig or the provider-agnostic interface.
     """
 
-    api_key: str = Field(
-        description="Anthropic API key or '999...' for CLI mode",
-        alias="ANTHROPIC_API_KEY"
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Anthropic API key (KOSMOS_ANTHROPIC_API_KEY, else ANTHROPIC_API_KEY)",
+        validation_alias=AliasChoices(*ANTHROPIC_KEY_ENV_VARS),
     )
     model: str = Field(
-        default=_DEFAULT_CLAUDE_SONNET_MODEL,
+        default=_DEFAULT_CLAUDE_MODEL,
         description="Claude model to use",
         alias="CLAUDE_MODEL"
     )
@@ -78,8 +94,15 @@ class ClaudeConfig(BaseSettings):
 
     @property
     def is_cli_mode(self) -> bool:
-        """Check if using CLI mode (API key is all 9s)."""
-        return self.api_key.replace('9', '') == ''
+        """Deprecated: the all-9s CLI routing key is gone; use LLM_PROVIDER=claude_code."""
+        import warnings
+        warnings.warn(
+            "ClaudeConfig.is_cli_mode is deprecated and always False; "
+            "use LLM_PROVIDER=claude_code for the Claude Code login",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return False
 
     model_config = SettingsConfigDict(populate_by_name=True)
 
@@ -907,21 +930,61 @@ def _optional_openai_config() -> Optional[OpenAIConfig]:
 
 
 def _optional_anthropic_config() -> Optional[AnthropicConfig]:
-    """Create AnthropicConfig only if configured."""
-    import os
-    # Anthropic config is created by default via claude field
-    # This is for the anthropic alias field
-    if os.getenv("ANTHROPIC_API_KEY"):
+    """Create AnthropicConfig only if an Anthropic API key variable is set."""
+    if _anthropic_key_from_env():
         return AnthropicConfig()
     return None
 
 
 def _optional_claude_config() -> Optional[ClaudeConfig]:
-    """Create ClaudeConfig only if ANTHROPIC_API_KEY is set."""
-    import os
-    if os.getenv("ANTHROPIC_API_KEY"):
+    """Create ClaudeConfig only if an Anthropic API key variable is set."""
+    if _anthropic_key_from_env():
         return ClaudeConfig()
     return None
+
+
+class ClaudeCodeConfig(BaseSettings):
+    """
+    Claude Code provider configuration (LLM_PROVIDER=claude_code).
+
+    Uses the Claude Code login through the Claude Agent SDK; no API key is needed.
+    """
+
+    model: str = Field(
+        default=_DEFAULT_CLAUDE_MODEL,
+        description="Model id used through the Claude Code login",
+        alias="CLAUDE_CODE_MODEL"
+    )
+    fallback_model: Optional[str] = Field(
+        default=_DEFAULT_CLAUDE_SONNET_MODEL,
+        description="Model the CLI falls back to when the main model is unavailable",
+        alias="CLAUDE_CODE_FALLBACK_MODEL"
+    )
+    timeout: int = Field(
+        default=300,
+        ge=1,
+        le=3600,
+        description="Seconds allowed per request",
+        alias="CLAUDE_CODE_TIMEOUT"
+    )
+    cli_path: Optional[str] = Field(
+        default=None,
+        description="Path to the claude binary (default: found on PATH)",
+        alias="CLAUDE_CODE_CLI_PATH"
+    )
+    max_thinking_tokens: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Optional thinking budget passed to the CLI",
+        alias="CLAUDE_CODE_MAX_THINKING_TOKENS"
+    )
+    oauth_token: Optional[str] = Field(
+        default=None,
+        description="Optional CLAUDE_CODE_OAUTH_TOKEN passed to the CLI",
+        alias="CLAUDE_CODE_OAUTH_TOKEN"
+    )
+
+    model_config = SettingsConfigDict(populate_by_name=True)
 
 
 class KosmosConfig(BaseSettings):
@@ -946,18 +1009,16 @@ class KosmosConfig(BaseSettings):
         if config.llm_provider == "openai":
             print(config.openai.model)
 
-        # Check Claude mode (backward compatible)
-        if config.claude.is_cli_mode:
-            print("Using Claude Code CLI")
-        else:
-            print("Using Anthropic API")
+        # Anthropic through the Claude Code login instead of an API key
+        if config.llm_provider == "claude_code":
+            print(config.claude_code.model)
         ```
     """
 
     # LLM Provider Selection
-    llm_provider: Literal["anthropic", "openai", "litellm"] = Field(
+    llm_provider: Literal["anthropic", "openai", "litellm", "claude_code"] = Field(
         default="anthropic",
-        description="LLM provider to use (anthropic, openai, or litellm)",
+        description="LLM provider to use (anthropic, openai, litellm, or claude_code)",
         alias="LLM_PROVIDER"
     )
 
@@ -966,6 +1027,7 @@ class KosmosConfig(BaseSettings):
     anthropic: Optional[AnthropicConfig] = Field(default_factory=_optional_anthropic_config)  # New name (optional, defaults to claude)
     openai: Optional[OpenAIConfig] = Field(default_factory=_optional_openai_config)  # OpenAI provider config
     litellm: Optional[LiteLLMConfig] = Field(default_factory=LiteLLMConfig)  # LiteLLM multi-provider config
+    claude_code: ClaudeCodeConfig = Field(default_factory=ClaudeCodeConfig)  # Claude Code login via Agent SDK
     local_model: LocalModelConfig = Field(default_factory=LocalModelConfig)  # Local model settings (Ollama, etc.)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -1038,9 +1100,13 @@ class KosmosConfig(BaseSettings):
         elif self.llm_provider == "anthropic":
             if not self.claude or not self.claude.api_key:
                 raise ValueError(
-                    "ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic. "
-                    "Please set ANTHROPIC_API_KEY in your environment or .env file."
+                    "An Anthropic API key is required when LLM_PROVIDER=anthropic. "
+                    "Set KOSMOS_ANTHROPIC_API_KEY (preferred) or ANTHROPIC_API_KEY in your environment "
+                    "or .env file. To use your Claude Code login instead, set LLM_PROVIDER=claude_code."
                 )
+        elif self.llm_provider == "claude_code":
+            # The Claude Code login is checked at the first call
+            pass
         elif self.llm_provider == "litellm":
             # LiteLLM validation is lenient - local models (Ollama) don't need API keys
             # API keys are only required for cloud providers and are validated at runtime
@@ -1056,6 +1122,8 @@ class KosmosConfig(BaseSettings):
             return self.claude.model
         elif provider == "openai":
             return self.openai.model
+        elif provider == "claude_code":
+            return self.claude_code.model
         raise ValueError(f"Unknown provider: {provider}")
 
     def get_active_provider_config(self) -> dict:
@@ -1067,6 +1135,15 @@ class KosmosConfig(BaseSettings):
             return {"model": self.claude.model, "api_key": self.claude.api_key}
         elif provider == "openai":
             return {"model": self.openai.model, "api_key": self.openai.api_key}
+        elif provider == "claude_code":
+            return {
+                "model": self.claude_code.model,
+                "fallback_model": self.claude_code.fallback_model,
+                "timeout": self.claude_code.timeout,
+                "cli_path": self.claude_code.cli_path,
+                "max_thinking_tokens": self.claude_code.max_thinking_tokens,
+                "oauth_token": self.claude_code.oauth_token,
+            }
         raise ValueError(f"Unknown provider: {provider}")
 
     def create_directories(self):

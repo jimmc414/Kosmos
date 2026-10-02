@@ -78,7 +78,7 @@ class TestProductionExecutorHealthCheck:
         async def check():
             return await executor.check_health()
 
-        health = asyncio.get_event_loop().run_until_complete(check())
+        health = asyncio.run(check())
 
         assert health["status"] == "not_initialized"
         assert health["pool"] is None
@@ -104,7 +104,7 @@ class TestProductionExecutorHealthCheck:
         async def check():
             return await executor.check_health()
 
-        health = asyncio.get_event_loop().run_until_complete(check())
+        health = asyncio.run(check())
 
         assert health["status"] == "healthy"
         assert health["initialized"] is True

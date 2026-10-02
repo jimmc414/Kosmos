@@ -58,6 +58,12 @@ except ImportError:
     LiteLLMProvider = None
     _LITELLM_AVAILABLE = False
 
+# Optional: ClaudeCodeProvider (needs claude-agent-sdk at construction time)
+try:
+    from kosmos.core.providers.claude_code import ClaudeCodeProvider
+except ImportError:
+    ClaudeCodeProvider = None
+
 __all__ = [
     "LLMProvider",
     "Message",
@@ -69,4 +75,5 @@ __all__ = [
     "list_providers",
     "register_provider",
     "LiteLLMProvider",
+    "ClaudeCodeProvider",
 ]

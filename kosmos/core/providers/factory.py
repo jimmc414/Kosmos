@@ -169,6 +169,20 @@ def get_provider_from_config(kosmos_config) -> LLMProvider:
                 'timeout': int(os.getenv('LITELLM_TIMEOUT', '120')),
             }
 
+    elif provider_name.lower() == 'claude_code':
+        # Claude Code login through the Claude Agent SDK; no API key
+        cc = getattr(kosmos_config, 'claude_code', None)
+        if cc is None:
+            raise ValueError("No Claude Code configuration found")
+        provider_config = {
+            'model': cc.model,
+            'fallback_model': cc.fallback_model,
+            'timeout': cc.timeout,
+            'cli_path': cc.cli_path,
+            'max_thinking_tokens': cc.max_thinking_tokens,
+            'oauth_token': cc.oauth_token,
+        }
+
     else:
         raise ValueError(f"Unknown provider in config: {provider_name}")
 
@@ -211,6 +225,13 @@ def _register_builtin_providers():
         logger.debug("LiteLLM provider registered with aliases: ollama, deepseek, lmstudio")
     except ImportError:
         logger.debug("LiteLLM provider not available (litellm package not installed)")
+
+    try:
+        from kosmos.core.providers.claude_code import ClaudeCodeProvider
+        register_provider("claude_code", ClaudeCodeProvider)
+        register_provider("claude-max", ClaudeCodeProvider)  # Alias
+    except ImportError:
+        logger.debug("Claude Code provider not available")
 
 
 # Register on module import

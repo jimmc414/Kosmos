@@ -7,12 +7,24 @@ All modules should import from here instead of hardcoding prices.
 Pricing is per 1 million tokens in USD.
 """
 
-from typing import Dict, Tuple
+import logging
+from typing import Dict, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Model pricing per 1M tokens (input, output) in USD
-# Updated pricing as of February 2026
+# Updated pricing as of October 2026
 MODEL_PRICING: Dict[str, Tuple[float, float]] = {
-    # Anthropic Claude 4.5 (current)
+    # Anthropic Claude 5 family (current)
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    # Anthropic Claude 4.6
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    # Anthropic Claude 4.5
     "claude-sonnet-4-5": (3.0, 15.0),
     "claude-haiku-4-5": (1.0, 5.0),
     "claude-opus-4-5": (15.0, 75.0),
@@ -50,6 +62,9 @@ _FAMILY_PRICING: Dict[str, Tuple[float, float]] = {
     "opus": (15.0, 75.0),
 }
 
+# Models already warned about, so an unknown model logs once per process
+_WARNED_UNKNOWN_MODELS: Set[str] = set()
+
 
 def get_model_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """
@@ -74,6 +89,12 @@ def get_model_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         input_price, output_price = MODEL_PRICING[model.split(":")[0]]
     else:
         # Fall back to family-based matching
+        if model not in _WARNED_UNKNOWN_MODELS:
+            _WARNED_UNKNOWN_MODELS.add(model)
+            logger.warning(
+                f"No exact pricing for model '{model}'; estimating cost from its model family "
+                f"(add it to kosmos/core/pricing.py MODEL_PRICING for exact figures)"
+            )
         model_lower = model.lower()
         input_price, output_price = (0.0, 0.0)
         for family, pricing in _FAMILY_PRICING.items():

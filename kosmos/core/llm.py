@@ -124,9 +124,7 @@ class ClaudeClient:
         os.environ['ANTHROPIC_API_KEY'] = 'sk-ant-...'
         client = ClaudeClient(enable_auto_model_selection=True)
 
-        # CLI mode (uses Claude Code Max)
-        os.environ['ANTHROPIC_API_KEY'] = '999999999...'
-        client = ClaudeClient()
+        # Claude Code login (subscription): use LLM_PROVIDER=claude_code and get_client()
         ```
     """
 
@@ -662,11 +660,15 @@ def get_client(reset: bool = False, use_provider_system: bool = True) -> Union[C
                 except Exception as e:
                     logger.warning(f"Failed to initialize provider from config: {e}. Falling back to AnthropicProvider")
                     # Fallback to AnthropicProvider instance (LLMProvider-compatible)
+                    from kosmos.config import _anthropic_key_from_env
                     from kosmos.core.providers.anthropic import AnthropicProvider
-                    api_key = os.environ.get('ANTHROPIC_API_KEY')
+                    api_key = _anthropic_key_from_env()
                     if not api_key:
-                        logger.error("ANTHROPIC_API_KEY not set; cannot create fallback provider")
-                        raise RuntimeError("No API key available for fallback AnthropicProvider")
+                        logger.error("No Anthropic API key set; cannot create fallback provider")
+                        raise RuntimeError(
+                            f"Provider initialization failed ({e}) and no KOSMOS_ANTHROPIC_API_KEY or "
+                            f"ANTHROPIC_API_KEY is available for the AnthropicProvider fallback"
+                        )
                     fallback_config = {
                         'api_key': api_key,
                         'model': _DEFAULT_CLAUDE_SONNET_MODEL,

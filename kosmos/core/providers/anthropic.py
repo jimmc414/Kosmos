@@ -1,12 +1,14 @@
 """
 Anthropic (Claude) provider implementation.
 
-Supports both Anthropic API and Claude Code CLI routing.
+Calls the Anthropic Messages API with an API key. For the Claude Code login
+(subscription) use the claude_code provider instead.
 """
 
 import os
 import json
 import logging
+import re
 import time as time_module
 from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
 
@@ -30,16 +32,32 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-from kosmos.config import _DEFAULT_CLAUDE_SONNET_MODEL, _DEFAULT_CLAUDE_HAIKU_MODEL
+from kosmos.config import (
+    _DEFAULT_CLAUDE_MODEL,
+    _DEFAULT_CLAUDE_SONNET_MODEL,
+    _DEFAULT_CLAUDE_HAIKU_MODEL,
+    _anthropic_key_from_env,
+)
 from kosmos.core.pricing import get_model_cost
+
+# Current-generation models reject sampling parameters (Opus) or non-default values
+# (Sonnet) with HTTP 400, so temperature is omitted for them.
+_NO_SAMPLING_PARAMS = re.compile(r"^claude-(opus-5|opus-4-[6-9]|sonnet-5|fable-5|mythos-5)")
+
+
+def _sampling_kwargs(model: str, temperature: Optional[float]) -> Dict[str, Any]:
+    """Return {'temperature': t} unless the model rejects sampling parameters."""
+    if temperature is None or _NO_SAMPLING_PARAMS.match(model or ""):
+        return {}
+    return {"temperature": temperature}
+
 
 class AnthropicProvider(LLMProvider):
     """
     Anthropic (Claude) provider implementation.
 
-    Supports both:
-    - Anthropic API (real API keys starting with sk-ant-)
-    - Claude Code CLI (API key of all 9s for routing)
+    Uses an Anthropic API key from config, KOSMOS_ANTHROPIC_API_KEY or
+    ANTHROPIC_API_KEY (in that order).
 
     Features:
     - Response caching
@@ -51,7 +69,7 @@ class AnthropicProvider(LLMProvider):
         ```python
         config = {
             'api_key': 'sk-ant-...',
-            'model': 'claude-3-5-sonnet-20241022',
+            'model': 'claude-opus-5-5',
             'max_tokens': 4096,
             'temperature': 0.7,
             'enable_cache': True,
@@ -68,8 +86,8 @@ class AnthropicProvider(LLMProvider):
 
         Args:
             config: Configuration dict with keys:
-                - api_key: Anthropic API key or '999...' for CLI mode
-                - model: Model name (default: claude-3-5-sonnet-20241022)
+                - api_key: Anthropic API key (default: KOSMOS_ANTHROPIC_API_KEY, then ANTHROPIC_API_KEY)
+                - model: Model name (default: claude-opus-5-5)
                 - max_tokens: Max tokens (default: 4096)
                 - temperature: Sampling temperature (default: 0.7)
                 - enable_cache: Enable caching (default: True)
@@ -85,14 +103,14 @@ class AnthropicProvider(LLMProvider):
             )
 
         # Extract configuration
-        self.api_key = config.get('api_key') or os.environ.get('ANTHROPIC_API_KEY')
+        self.api_key = config.get('api_key') or _anthropic_key_from_env()
         if not self.api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY not provided in config or environment. "
-                "Set to your API key or '999999999999999999999999999999999999999999999999' for CLI mode."
+                "No Anthropic API key found. Set KOSMOS_ANTHROPIC_API_KEY (preferred) or "
+                "ANTHROPIC_API_KEY, or use LLM_PROVIDER=claude_code for the Claude Code login."
             )
 
-        self.model = config.get('model', _DEFAULT_CLAUDE_SONNET_MODEL)
+        self.model = config.get('model') or _DEFAULT_CLAUDE_MODEL
         self.default_model = self.model
         self.max_tokens = config.get('max_tokens', 4096)
         self.temperature = config.get('temperature', 0.7)
@@ -106,9 +124,6 @@ class AnthropicProvider(LLMProvider):
 
         self.base_url = config.get('base_url') or os.environ.get('CLAUDE_BASE_URL') # NEW: get user-supplied endpoint if any
 
-        # Detect mode (CLI or API)
-        self.is_cli_mode = self.api_key.replace('9', '') == ''
-
         # Initialize Anthropic client
         try:
             if self.base_url:
@@ -116,7 +131,7 @@ class AnthropicProvider(LLMProvider):
                 logger.info(f"Anthropic provider initialized with custom base_url={self.base_url}")
             else:
                 self.client = Anthropic(api_key=self.api_key)
-                logger.info(f"Anthropic provider initialized in {'CLI' if self.is_cli_mode else 'API'} mode")
+                logger.info("Anthropic provider initialized")
         except Exception as e:
             logger.error(f"Failed to initialize Anthropic client: {e}")
             raise ProviderAPIError("anthropic", f"Failed to initialize: {e}", raw_error=e)
@@ -184,7 +199,7 @@ class AnthropicProvider(LLMProvider):
                 selected_model = model_override
                 self.model_overrides += 1
                 logger.debug(f"Model override: {selected_model}")
-            elif self.enable_auto_model_selection and not self.is_cli_mode:
+            elif self.enable_auto_model_selection:
                 # Auto-select based on complexity
                 from kosmos.core.llm import ModelComplexity
                 complexity_analysis = ModelComplexity.estimate_complexity(prompt, system)
@@ -271,11 +286,11 @@ class AnthropicProvider(LLMProvider):
             response = self.client.messages.create(
                 model=selected_model,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 system=system or "",
                 messages=messages,
                 stop_sequences=stop_sequences or [],
                 timeout=self.timeout,
+                **_sampling_kwargs(selected_model, temperature),
             )
 
             # Extract text and usage
@@ -297,7 +312,7 @@ class AnthropicProvider(LLMProvider):
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 total_tokens=response.usage.input_tokens + response.usage.output_tokens,
-                cost_usd=self._calculate_cost(response.usage.input_tokens, response.usage.output_tokens, selected_model) if not self.is_cli_mode else None,
+                cost_usd=self._calculate_cost(response.usage.input_tokens, response.usage.output_tokens, selected_model),
                 model=selected_model,
                 provider="anthropic",
                 timestamp=datetime.now()
@@ -385,13 +400,14 @@ class AnthropicProvider(LLMProvider):
 
         try:
             # Use async client for true async execution
+            resolved_model = self._resolve_model(**kwargs)
             response = await self.async_client.messages.create(
-                model=self._resolve_model(**kwargs),
+                model=resolved_model,
                 max_tokens=max_tokens,
                 system=system or "",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                stop_sequences=stop_sequences or []
+                stop_sequences=stop_sequences or [],
+                **_sampling_kwargs(resolved_model, temperature),
             )
 
             # Parse response (same as sync)
@@ -467,10 +483,10 @@ class AnthropicProvider(LLMProvider):
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 system=system_prompt or "",
                 messages=anthropic_messages,
                 timeout=self.timeout,
+                **_sampling_kwargs(self.model, temperature),
             )
 
             # Extract and convert
@@ -479,7 +495,7 @@ class AnthropicProvider(LLMProvider):
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 total_tokens=response.usage.input_tokens + response.usage.output_tokens,
-                cost_usd=self._calculate_cost(response.usage.input_tokens, response.usage.output_tokens, self.model) if not self.is_cli_mode else None,
+                cost_usd=self._calculate_cost(response.usage.input_tokens, response.usage.output_tokens, self.model),
                 model=self.model,
                 provider="anthropic",
                 timestamp=datetime.now()
@@ -573,24 +589,22 @@ class AnthropicProvider(LLMProvider):
             "name": self.model,
             "max_tokens": 200000,  # Claude 3.5 context window
             "provider": "anthropic",
-            "mode": "cli" if self.is_cli_mode else "api",
+            "mode": "api",
         }
 
-        # Add pricing for API mode using canonical pricing
-        if not self.is_cli_mode:
-            from kosmos.core.pricing import MODEL_PRICING, _FAMILY_PRICING
-            # Try exact model match first, then family-based
-            model_lower = self.model.lower()
-            if self.model in MODEL_PRICING:
-                input_price, output_price = MODEL_PRICING[self.model]
-            else:
-                input_price, output_price = (3.0, 15.0)  # default Sonnet
-                for family, pricing in _FAMILY_PRICING.items():
-                    if family in model_lower:
-                        input_price, output_price = pricing
-                        break
-            model_info["cost_per_million_input_tokens"] = input_price
-            model_info["cost_per_million_output_tokens"] = output_price
+        # Pricing from the canonical table: exact model match first, then family-based
+        from kosmos.core.pricing import MODEL_PRICING, _FAMILY_PRICING
+        model_lower = self.model.lower()
+        if self.model in MODEL_PRICING:
+            input_price, output_price = MODEL_PRICING[self.model]
+        else:
+            input_price, output_price = (3.0, 15.0)  # default Sonnet
+            for family, pricing in _FAMILY_PRICING.items():
+                if family in model_lower:
+                    input_price, output_price = pricing
+                    break
+        model_info["cost_per_million_input_tokens"] = input_price
+        model_info["cost_per_million_output_tokens"] = output_price
 
         return model_info
 
@@ -606,9 +620,6 @@ class AnthropicProvider(LLMProvider):
         Returns:
             float: Cost in USD
         """
-        if self.is_cli_mode:
-            return 0.0
-
         return get_model_cost(model, input_tokens, output_tokens)
 
     def get_usage_stats(self) -> Dict[str, Any]:
@@ -633,7 +644,7 @@ class AnthropicProvider(LLMProvider):
             "cache_hits": self.cache_hits,
             "cache_misses": self.cache_misses,
             "cache_hit_rate_percent": round(cache_hit_rate, 2),
-            "mode": "cli" if self.is_cli_mode else "api",
+            "mode": "api",
         })
 
         # Model selection stats
@@ -722,7 +733,7 @@ class AnthropicProvider(LLMProvider):
             with self.client.messages.stream(
                 model=selected_model,
                 max_tokens=max_tokens,
-                temperature=temperature,
+                **_sampling_kwargs(selected_model, temperature),
                 system=system or "",
                 messages=messages,
                 stop_sequences=stop_sequences or [],
@@ -829,7 +840,7 @@ class AnthropicProvider(LLMProvider):
             async with self.async_client.messages.stream(
                 model=selected_model,
                 max_tokens=max_tokens,
-                temperature=temperature,
+                **_sampling_kwargs(selected_model, temperature),
                 system=system or "",
                 messages=messages,
                 stop_sequences=stop_sequences or [],

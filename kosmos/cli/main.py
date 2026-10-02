@@ -225,8 +225,10 @@ def info():
         elif config.openai:
             config_table.add_row("OpenAI Model", config.openai.model)
         config_table.add_row("Max Iterations", str(config.research.max_iterations))
-        if config.claude:
-            config_table.add_row("API Mode", "CLI" if config.claude.is_cli_mode else "API")
+        try:
+            config_table.add_row("LLM Provider", f"{config.llm_provider} ({config.get_active_model()})")
+        except Exception:
+            config_table.add_row("LLM Provider", config.llm_provider)
         config_table.add_row(
             "Domains",
             ", ".join(config.research.enabled_domains) if config.research.enabled_domains else "All"

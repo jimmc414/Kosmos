@@ -4,6 +4,7 @@ Config command for Kosmos CLI.
 View and manage Kosmos configuration.
 """
 
+import os
 from typing import Optional
 from pathlib import Path
 
@@ -134,7 +135,10 @@ def display_config():
             )
 
             claude_table.add_row("Model", config.claude.model)
-            claude_table.add_row("API Mode", "CLI" if config.claude.is_cli_mode else "API")
+            claude_table.add_row(
+                "API Key Source",
+                "KOSMOS_ANTHROPIC_API_KEY" if os.environ.get("KOSMOS_ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY",
+            )
             claude_table.add_row("Max Tokens", str(config.claude.max_tokens))
             claude_table.add_row("Temperature", str(config.claude.temperature))
             claude_table.add_row("Cache Enabled", str(config.claude.enable_cache))

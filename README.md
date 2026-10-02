@@ -162,18 +162,25 @@ All configuration via environment variables. See `.env.example` for the full lis
 ### LLM Provider
 
 ```bash
-# Anthropic (default)
+# DeepSeek and other providers through LiteLLM (local models included)
+LLM_PROVIDER=litellm
+LITELLM_MODEL=deepseek/deepseek-chat
+DEEPSEEK_API_KEY=sk-...
+
+# Anthropic API, billed per token. Prefer KOSMOS_ANTHROPIC_API_KEY: exporting
+# ANTHROPIC_API_KEY overrides a Claude Code subscription login for other tools.
 LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
+KOSMOS_ANTHROPIC_API_KEY=sk-ant-api03-...
+CLAUDE_MODEL=claude-opus-5-5
+
+# Anthropic models through your Claude Code login (e.g. a Max subscription), no API key.
+# Needs `pip install claude-agent-sdk`, the `claude` CLI on PATH and `claude login`.
+LLM_PROVIDER=claude_code
+CLAUDE_CODE_MODEL=claude-opus-5-5
 
 # OpenAI
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
-
-# LiteLLM (supports 100+ providers including local models)
-LLM_PROVIDER=litellm
-LITELLM_MODEL=ollama/llama3.1:8b
-LITELLM_API_BASE=http://localhost:11434
 ```
 
 ### Budget Control
