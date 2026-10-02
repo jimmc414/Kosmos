@@ -96,7 +96,7 @@ class TestEndToEndPipeline:
         code = generator.generate(ttest_protocol)
 
         assert code is not None
-        assert "ttest_comparison" in code
+        assert "ttest_ind" in code
 
         # Step 2: Execute code
         executor = CodeExecutor(max_retries=1, use_sandbox=False)
@@ -219,7 +219,7 @@ class TestTemplatePipeline:
         code = generator.generate(protocol)
 
         # Note: May fail if data doesn't match expected format, but code should generate
-        assert "correlation_analysis" in code
+        assert "pearsonr" in code
 
 
 # Error Recovery Tests

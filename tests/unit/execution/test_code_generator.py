@@ -357,8 +357,8 @@ class TestCodeGeneration:
 
         assert code is not None
         assert "import pandas as pd" in code
-        assert "DataAnalyzer" in code
-        assert "ttest_comparison" in code
+        assert "kosmos" not in code
+        assert "ttest_ind" in code
         assert "results" in code
 
     def test_correlation_code_generation(self, code_generator, correlation_protocol):
@@ -367,8 +367,8 @@ class TestCodeGeneration:
 
         assert code is not None
         assert "import pandas as pd" in code
-        assert "DataAnalyzer" in code
-        assert "correlation_analysis" in code
+        assert "kosmos" not in code
+        assert "pearsonr" in code
 
     def test_loglog_code_generation(self, code_generator, loglog_protocol):
         """Test log-log scaling code generation."""
@@ -440,6 +440,74 @@ class TestGenericTemplate:
         assert "top-level variable named results" in prompt
 
 
+class TestSelfContainedTemplates:
+    """Templates must run in the sandbox image, which has no kosmos package (P0-5, P0-6)."""
+
+    @staticmethod
+    def _run(code, csv):
+        ns = {"data_path": str(csv)}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            exec(code, ns)
+        return ns["results"], out.getvalue()
+
+    def test_ttest_code_runs_on_file(self, code_generator, ttest_protocol, tmp_path):
+        csv = tmp_path / "ttest.csv"
+        rows = ["group,measurement"]
+        rows += [f"control,{1.0 + 0.1 * i}" for i in range(10)]
+        rows += [f"experimental,{2.0 + 0.15 * i}" for i in range(10)]
+        csv.write_text("\n".join(rows) + "\n")
+
+        results, _ = self._run(code_generator.generate(ttest_protocol), csv)
+
+        assert isinstance(results["p_value"], float)
+        assert results["data_source"] == "file"
+        assert "effect_size" in results
+        assert results["effect_size"] > 0  # experimental minus control
+
+    def test_ttest_code_names_columns_when_a_group_is_missing(self, code_generator, ttest_protocol, tmp_path):
+        csv = tmp_path / "one_group.csv"
+        csv.write_text("group,measurement\n" + "".join(f"control,{i}\n" for i in range(5)))
+
+        with pytest.raises(ValueError, match="group"):
+            self._run(code_generator.generate(ttest_protocol), csv)
+
+    def test_correlation_code_runs_on_file(self, code_generator, correlation_protocol, tmp_path):
+        csv = tmp_path / "corr.csv"
+        rows = ["x,y"] + [f"{i},{2 * i + (i % 4) * 0.5}" for i in range(30)]
+        csv.write_text("\n".join(rows) + "\n")
+
+        results, stdout = self._run(code_generator.generate(correlation_protocol), csv)
+
+        assert isinstance(results["correlation"], float)
+        assert results["method"] == "pearson"
+        assert results["effect_size"] == results["correlation"]
+        assert "Correlation (pearson)" in stdout
+
+    @pytest.mark.parametrize("test_type", [StatisticalTest.T_TEST, StatisticalTest.CORRELATION])
+    def test_quoted_names_generate_valid_code(self, code_generator, test_type):
+        protocol = make_valid_protocol(
+            name="O'Brien's test",
+            statistical_tests=[
+                StatisticalTestSpec(
+                    test_type=test_type,
+                    description="Test with awkward variable names",
+                    null_hypothesis="No effect between the two variables",
+                    variables=["CO2 concentration", "it's temp"],
+                )
+            ],
+            variables={
+                "CO2 concentration": Variable(name="CO2 concentration", type=VariableType.INDEPENDENT, description="Atmospheric CO2 ppm"),
+                "it's temp": Variable(name="it's temp", type=VariableType.DEPENDENT, description="Temperature anomaly"),
+            },
+        )
+
+        code = code_generator.generate(protocol)
+
+        ast.parse(code)
+        assert "kosmos" not in code
+
+
 class TestLLMFallback:
     """Tests for LLM-based code generation fallback."""
 
@@ -465,7 +533,8 @@ class TestLLMFallback:
         code = code_generator_with_llm.generate(ttest_protocol)
 
         # Should use template, not LLM
-        assert "ttest_comparison" in code
+        assert "# T-Test Comparison Analysis" in code
+        assert "ttest_ind" in code
         # LLM might still be called if enhance mode is on, but template should be primary
 
     def test_llm_can_enhance_template_code(self):
@@ -577,8 +646,8 @@ class TestCodeGeneratorIntegration:
 
         # Verify code structure
         assert "import" in code
-        assert "DataAnalyzer" in code
-        assert "ttest_comparison" in code
+        assert "kosmos" not in code
+        assert "ttest_ind" in code
         assert "results" in code
 
         # Verify valid syntax
