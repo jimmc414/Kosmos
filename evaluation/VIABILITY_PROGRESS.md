@@ -19,8 +19,8 @@ Status values: `todo`, `in progress`, `done`, `blocked` (reason in Notes). Work 
 | # | ID | Title | Plan section | Status | Notes |
 |---|---|---|---|---|---|
 | 1 | P0-1 | Generic template self-contained and syntax-safe | 5 / P0-1 | done | Deviation: plan test (c) asserted "kosmos" not in the prompt, which contradicts the required prompt text "Do NOT import kosmos"; the test asserts no DataAnalyzer / kosmos.execution and that the new instructions are present. Fixture Variable descriptions need at least 10 characters. |
-| 2 | P0-2 | `RESULT:` JSON footer in _execute_in_sandbox | 5 / P0-2 | todo | |
-| 3 | P0-3 | execute_with_data skips the host prefix when sandboxed | 5 / P0-3 | todo | |
+| 2 | P0-2 | `RESULT:` JSON footer in _execute_in_sandbox | 5 / P0-2 | done | SANDBOX_RESULT_FOOTER sits after DEFAULT_EXECUTION_TIMEOUT in kosmos/execution/executor.py |
+| 3 | P0-3 | execute_with_data skips the host prefix when sandboxed | 5 / P0-3 | in progress | |
 | 4 | P0-4 | Director reads exec_result.success, honest rows, fail-fast | 5 / P0-4 | todo | |
 | 5 | P0-5 | TTest and Correlation templates self-contained | 5 / P0-5 | todo | |
 | 6 | P0-6 | LogLog and ML templates self-contained | 5 / P0-6 | todo | |

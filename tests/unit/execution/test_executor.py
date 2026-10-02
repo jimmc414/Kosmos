@@ -4,8 +4,14 @@ Tests for code execution system.
 Tests code execution, retry logic, error handling, output capture, and sandbox integration.
 """
 
+import contextlib
+import io
+import json
+import math
+
 import pytest
 from unittest.mock import Mock, patch, MagicMock
+from kosmos.execution.sandbox import SandboxExecutionResult
 from kosmos.execution.executor import (
     CodeExecutor,
     ExecutionResult,
@@ -401,6 +407,49 @@ class TestSandboxIntegration:
 
         assert executor.sandbox is not None
         assert executor.use_sandbox is True
+
+    @patch('kosmos.execution.executor.SANDBOX_AVAILABLE', True)
+    @patch('kosmos.execution.executor.DockerSandbox')
+    def test_sandboxed_code_gets_result_footer(self, mock_sandbox_class):
+        """The footer prints results as one JSON RESULT: line, numpy types included (P0-2)."""
+        import numpy as np  # noqa: F401  (used by the executed code)
+
+        mock_sandbox = mock_sandbox_class.return_value
+        mock_sandbox.execute.return_value = SandboxExecutionResult(success=True)
+        executor = CodeExecutor(use_sandbox=True)
+
+        executor.execute(
+            "import numpy as np\n"
+            "results={'p': np.float64(0.01), 'n': np.int64(3), 'ok': np.bool_(True), "
+            "'arr': np.array([1,2]), 'x': float('nan')}"
+        )
+
+        code = mock_sandbox.execute.call_args.args[0]
+        assert code.count("RESULT:") == 1
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            exec(code, {})
+        lines = [l for l in out.getvalue().splitlines() if l.startswith("RESULT:")]
+        assert len(lines) == 1
+        payload = json.loads(lines[0][len("RESULT:"):])
+        assert {k: v for k, v in payload.items() if k != 'x'} == {'p': 0.01, 'n': 3, 'ok': True, 'arr': [1, 2]}
+        assert math.isnan(payload['x'])
+
+    @patch('kosmos.execution.executor.SANDBOX_AVAILABLE', True)
+    @patch('kosmos.execution.executor.DockerSandbox')
+    def test_result_footer_does_not_accumulate_on_retry(self, mock_sandbox_class):
+        """Every retry sends exactly one footer (P0-2)."""
+        mock_sandbox = mock_sandbox_class.return_value
+        mock_sandbox.execute.return_value = SandboxExecutionResult(
+            success=False, error="x", error_type="ExecutionError"
+        )
+        executor = CodeExecutor(use_sandbox=True, max_retries=2, retry_delay=0.01)
+
+        executor.execute("results={}", retry_on_error=True)
+
+        assert mock_sandbox.execute.call_count == 2
+        for call in mock_sandbox.execute.call_args_list:
+            assert call.args[0].count("RESULT:") == 1
 
     @patch('kosmos.execution.executor.SANDBOX_AVAILABLE', False)
     def test_executor_graceful_fallback_when_sandbox_unavailable(self):

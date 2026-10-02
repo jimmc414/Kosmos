@@ -39,6 +39,30 @@ except ImportError:
 # Execution timeout (seconds) for unsandboxed exec (F-19)
 DEFAULT_EXECUTION_TIMEOUT = 300
 
+# Appended to sandboxed code so the container's results dict reaches the host:
+# DockerSandbox._extract_return_value parses a single stdout line starting with RESULT:
+SANDBOX_RESULT_FOOTER = '''
+# --- kosmos sandbox result footer (appended by CodeExecutor._execute_in_sandbox) ---
+import json as _kj
+def _kdef(o):
+    try:
+        import numpy as _n
+        if isinstance(o, _n.integer): return int(o)
+        if isinstance(o, _n.floating): return float(o)
+        if isinstance(o, _n.bool_): return bool(o)
+        if isinstance(o, _n.ndarray): return o.tolist()
+    except Exception:
+        pass
+    return str(o)
+def _kfix(o):
+    if isinstance(o, dict): return {str(k): _kfix(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)): return [_kfix(v) for v in o]
+    return o
+_kr = globals().get('results', globals().get('result'))
+if _kr is not None:
+    print("RESULT:" + _kj.dumps(_kfix(_kr), default=_kdef))
+'''
+
 # Restricted builtins for unsandboxed execution (F-16)
 SAFE_BUILTINS = {
     # Core types
@@ -571,6 +595,9 @@ class CodeExecutor:
 
             # Update code to use mounted data file
             code = f"data_path = '/workspace/data/{filename}'\n{code}"
+
+        # Each attempt receives a fresh copy of the code, so footers never accumulate
+        code = code.rstrip("\n") + "\n" + SANDBOX_RESULT_FOOTER
 
         # Execute in sandbox
         sandbox_result = self.sandbox.execute(code, data_files=data_files if data_files else None)
