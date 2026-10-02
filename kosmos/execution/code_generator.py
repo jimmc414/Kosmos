@@ -579,7 +579,7 @@ class GenericComputationalCodeTemplate(CodeTemplate):
 
         code_lines = [
             "# Computational Experiment Analysis",
-            f"# Protocol: {protocol.name}",
+            f"# Protocol: {' '.join(str(protocol.name).split())}",
             "",
             "import pandas as pd",
             "import numpy as np",
@@ -601,10 +601,10 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             f"    # Generate synthetic data for computational experiment",
             f"    np.random.seed({seed})",
             f"    n = 100",
-            f"    {x_var}_data = np.linspace(0, 10, n)",
-            f"    noise = np.random.normal(0, 0.5, n)",
-            f"    {y_var}_data = 2.0 * np.exp(-0.3 * {x_var}_data) + noise",
-            f"    df = pd.DataFrame({{'{x_var}': {x_var}_data, '{y_var}': {y_var}_data}})",
+            "    _x_syn = np.linspace(0, 10, n)",
+            "    noise = np.random.normal(0, 0.5, n)",
+            "    _y_syn = 2.0 * np.exp(-0.3 * _x_syn) + noise",
+            f"    df = pd.DataFrame({{{x_var!r}: _x_syn, {y_var!r}: _y_syn}})",
             "    _data_source = 'synthetic'",
             "",
             "# Clean data",
@@ -695,21 +695,6 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "    }",
             "    results['p_value'] = float(p_value)",
             "    results['effect_size'] = float(np.mean(vals) / np.std(vals)) if np.std(vals) > 0 else 0.0",
-            "",
-            "# Generate publication-quality figure",
-            "from kosmos.analysis.visualization import PublicationVisualizer",
-            "viz = PublicationVisualizer()",
-            "",
-            "if 'figure_path' in dir() and figure_path and len(numeric_cols) >= 2:",
-            "    viz.scatter_with_regression(",
-            "        x=df[numeric_cols[0]].values,",
-            "        y=df[numeric_cols[1]].values,",
-            "        x_label=numeric_cols[0],",
-            "        y_label=numeric_cols[1],",
-            f"        title='{protocol.name}',",
-            "        output_path=str(figure_path)",
-            "    )",
-            "    results['figure_path'] = str(figure_path)",
             "",
             "# Assumption checks",
             "results['assumption_checks'] = {",
@@ -892,12 +877,13 @@ Generate complete, executable Python code that:
 2. Implements each protocol step
 3. Performs the specified statistical tests
 4. Returns results in a dictionary
+5. Assign the final results dictionary to a top-level variable named results
 
 IMPORTANT: Use `data_path` variable for loading data, e.g., `pd.read_csv(data_path)`
 Do NOT hardcode 'data.csv' - use the data_path variable instead.
 
 Use these libraries: pandas, numpy, scipy.stats
-Use kosmos.execution.data_analysis.DataAnalyzer for statistical tests
+Do NOT import kosmos or any kosmos.* module; only pandas, numpy, scipy.stats, scikit-learn and statsmodels exist in the sandbox.
 Include comments explaining each section
 
 Return ONLY the Python code, no explanations."""

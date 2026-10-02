@@ -4,6 +4,10 @@ Tests for code generation system.
 Tests template matching, code generation, LLM fallback, and validation.
 """
 
+import ast
+import contextlib
+import io
+
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from kosmos.execution.code_generator import (
@@ -67,6 +71,53 @@ def ttest_protocol():
             storage_gb=0.1
         ),
         data_requirements={"format": "csv", "columns": ["group", "measurement"]},
+        expected_duration_minutes=10
+    )
+
+
+@pytest.fixture
+def generic_protocol():
+    """Create a COMPUTATIONAL protocol that only the generic template matches.
+
+    Variable keys and the name contain spaces and an apostrophe, the shapes
+    LLM-designed protocols produce, to exercise syntax safety.
+    """
+    return ExperimentProtocol(
+        id="test-generic",
+        name="CO2 vs temperature's trend",
+        hypothesis_id="hyp-generic",
+        domain="climate",
+        description="Computational analysis of the relationship between two measured quantities",
+        objective="Test whether CO2 concentration tracks the temperature anomaly",
+        experiment_type=ExperimentType.COMPUTATIONAL,
+        statistical_tests=[
+            StatisticalTestSpec(
+                test_type=StatisticalTest.T_TEST,
+                description="Two-sample T-test for group comparison",
+                null_hypothesis="No difference between group means",
+                variables=["CO2 concentration", "temp anomaly"],
+            )
+        ],
+        steps=[
+            ProtocolStep(
+                step_number=1,
+                title="Execute analysis",
+                description="Load data and run the analysis",
+                action="run_analysis",
+                expected_duration_minutes=5
+            )
+        ],
+        variables={
+            "CO2 concentration": Variable(name="CO2 concentration", type=VariableType.INDEPENDENT, description="Atmospheric CO2 concentration in ppm"),
+            "temp anomaly": Variable(name="temp anomaly", type=VariableType.DEPENDENT, description="Temperature anomaly")
+        },
+        resource_requirements=ResourceRequirements(
+            estimated_runtime_seconds=300,
+            cpu_cores=1,
+            memory_gb=1,
+            storage_gb=0.1
+        ),
+        data_requirements={"format": "csv"},
         expected_duration_minutes=10
     )
 
@@ -358,6 +409,36 @@ class TestCodeGeneration:
 
 
 # LLM Fallback Tests
+
+class TestGenericTemplate:
+    """The generic template must run without kosmos and survive LLM-chosen names (P0-1)."""
+
+    def test_generic_code_is_self_contained_and_parses(self, code_generator, generic_protocol):
+        code = code_generator.generate(generic_protocol)
+        assert "kosmos" not in code
+        ast.parse(code)
+
+    def test_generic_code_reads_the_data_file(self, code_generator, generic_protocol, tmp_path):
+        code = code_generator.generate(generic_protocol)
+        csv = tmp_path / "data.csv"
+        rows = ["year,co2_ppm"] + [f"{2000 + i},{370 + 2.1 * i + (i % 3) * 0.4}" for i in range(10)]
+        csv.write_text("\n".join(rows) + "\n")
+
+        ns = {"data_path": str(csv)}
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(code, ns)
+
+        assert ns["results"]["data_source"] == "file"
+        assert isinstance(ns["results"]["p_value"], float)
+        assert ns["results"]["n_samples"] == 10
+
+    def test_llm_prompt_forbids_kosmos_imports(self, code_generator, generic_protocol):
+        prompt = code_generator._create_code_generation_prompt(generic_protocol)
+        assert "DataAnalyzer" not in prompt
+        assert "kosmos.execution" not in prompt
+        assert "Do NOT import kosmos" in prompt
+        assert "top-level variable named results" in prompt
+
 
 class TestLLMFallback:
     """Tests for LLM-based code generation fallback."""

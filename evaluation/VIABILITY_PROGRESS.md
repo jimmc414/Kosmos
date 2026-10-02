@@ -18,7 +18,7 @@ Status values: `todo`, `in progress`, `done`, `blocked` (reason in Notes). Work 
 
 | # | ID | Title | Plan section | Status | Notes |
 |---|---|---|---|---|---|
-| 1 | P0-1 | Generic template self-contained and syntax-safe | 5 / P0-1 | in progress | |
+| 1 | P0-1 | Generic template self-contained and syntax-safe | 5 / P0-1 | done | Deviation: plan test (c) asserted "kosmos" not in the prompt, which contradicts the required prompt text "Do NOT import kosmos"; the test asserts no DataAnalyzer / kosmos.execution and that the new instructions are present. Fixture Variable descriptions need at least 10 characters. |
 | 2 | P0-2 | `RESULT:` JSON footer in _execute_in_sandbox | 5 / P0-2 | todo | |
 | 3 | P0-3 | execute_with_data skips the host prefix when sandboxed | 5 / P0-3 | todo | |
 | 4 | P0-4 | Director reads exec_result.success, honest rows, fail-fast | 5 / P0-4 | todo | |
