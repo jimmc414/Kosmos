@@ -33,13 +33,13 @@ Status values: `todo`, `in progress`, `done`, `blocked` (reason in Notes). Work 
 | 12 | P1-5 | `--budget` armed, provider calls recorded, per-model pricing | 5 / P1-5 | done | e2e test_budget_enforcement -k halts_on_exceeded still passes. Post-commit live re-run of step 5: see the session log |
 | 13 | A-1 | Anthropic via KOSMOS_ANTHROPIC_API_KEY and Claude Code subscription | 5 / A-1 | todo | Includes the one-call live subscription smoke test |
 | 14 | A-2 | `--provider` / `--model` flags on `kosmos run` | this file, "A-2 spec" | todo | Not in the plan; spec below |
-| 15 | P2-0 | Result columns for execution, validation, provenance, cost | 5 / P2-0 | todo | |
+| 15 | P2-5 | Novelty without sentence-transformers | 5 / P2-5 | todo | Moved to the front of P2 on 2026-10-02: with broken embeddings every repeat run on a topic already in kosmos.db generates zero hypotheses (live re-run after P1-5 showed this), which blocks every later live check |
+| 15a | P2-0 | Result columns for execution, validation, provenance, cost | 5 / P2-0 | todo | |
 | 16 | P2-6 | LiteLLM JSON mode and tolerant parsing | 5 / P2-6 | todo | Moved ahead of P2-1, which depends on it |
 | 17 | P2-1 | Dataset schema and variable-to-column binding | 5 / P2-1 | todo | |
 | 18 | P2-2 | Recomputation, permutation null, ScholarEval advisory, verdict rule | 5 / P2-2 | todo | |
 | 19 | P2-3 | Seed and provenance | 5 / P2-3 | todo | |
 | 20 | P2-4 | Honest run report and real cost | 5 / P2-4 | todo | |
-| 21 | P2-5 | Novelty without sentence-transformers | 5 / P2-5 | todo | |
 | 22 | P2-7 | Hypothesis-pool control | 5 / P2-7 | todo | |
 | 23 | P3-1 | CodeValidator and emergency stop on the director path | 5 / P3-1 | todo | |
 | 24 | P3-4 | Archive zero-importer modules (Tiers A and B; Tier C kept) | 5 / P3-4 | todo | Ahead of P3-2 because P3-2 step 3 archives api modules |
@@ -73,4 +73,4 @@ Owner request 2026-10-02: users must be able to use DeepSeek or Anthropic models
 
 Newest last. One line per session: date, items completed, anything the next session must know.
 
-- 2026-10-02: tracker and `/next-plan-item` skill created; P0-1 started.
+- 2026-10-02: tracker and `/next-plan-item` skill created; P0-1 through P1-5 done. Live step 5 re-run after P1-5 (in-process via typer CliRunner so usage could be read): exit 0, end display renders, 101 provider calls, $0.0155 total, budget armed at $1.00; but zero hypotheses, because the novelty filter rejects everything once kosmos.db holds same-topic hypotheses (zero-vector embeddings, P2-5), so the run converged at iteration 0. The CLI's 'Total API Calls 0' is the P2-4 defect (reads a nonexistent attribute). P2-5 moved to the front of P2.
