@@ -601,6 +601,11 @@ class SafetyConfig(BaseSettings):
         description="Enable sandboxed code execution",
         alias="ENABLE_SANDBOXING"
     )
+    sandbox_image: str = Field(
+        default="kosmos-sandbox:latest",
+        description="Docker image tag used for sandboxed experiment execution",
+        alias="KOSMOS_SANDBOX_IMAGE"
+    )
     require_human_approval: bool = Field(
         default=False,
         description="Require human approval for high-risk operations",

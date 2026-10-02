@@ -129,6 +129,8 @@ def run_research(
     )
     console.print()
 
+    halted = False
+
     # Initialize research
     try:
         from kosmos.agents.research_director import ResearchDirectorAgent
@@ -173,6 +175,9 @@ def run_research(
 
             # Dataset path
             "data_path": str(data_path.resolve()) if data_path else None,
+
+            # Sandbox image for experiment execution
+            "sandbox_image": config_obj.safety.sandbox_image,
 
             # Interactive mode settings
             "auto_model_selection": auto_model_selection,
@@ -219,7 +224,12 @@ def run_research(
             else:
                 print_error(f"Unsupported output format: {output.suffix}")
 
-        print_success("Research completed successfully!", title="Complete")
+        halt_reason = results.get("convergence_reason") or ""
+        if halt_reason.startswith("halted:"):
+            print_error(f"Research halted: {halt_reason[len('halted:'):].strip()}", title="Halted")
+            halted = True
+        else:
+            print_success("Research completed successfully!", title="Complete")
 
     except KeyboardInterrupt:
         console.print("\n[warning]Research interrupted by user[/warning]")
@@ -229,6 +239,9 @@ def run_research(
         print_error(f"Research failed: {str(e)}", title="Error")
         if "--debug" in sys.argv:
             raise
+        raise typer.Exit(1)
+
+    if halted:
         raise typer.Exit(1)
 
 

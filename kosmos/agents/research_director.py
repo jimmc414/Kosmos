@@ -149,6 +149,7 @@ class ResearchDirectorAgent(BaseAgent):
         self._data_provider = None
         self._data_analyst = None
         self._hypothesis_refiner = None
+        self._sandbox_error: Optional[str] = None
 
         # Message correlation tracking
         self.pending_requests: Dict[str, Dict[str, Any]] = {}  # correlation_id -> request_info
@@ -1537,10 +1538,11 @@ class ResearchDirectorAgent(BaseAgent):
         Replicates the logic from _handle_executor_response().
         """
         from kosmos.execution.code_generator import ExperimentCodeGenerator
-        from kosmos.execution.executor import CodeExecutor
+        from kosmos.execution.executor import CodeExecutor, ExecutionResult
         from kosmos.execution.data_provider import DataProvider
         from kosmos.models.experiment import ExperimentProtocol
-        from kosmos.db.operations import create_result
+        from kosmos.db.operations import create_result, update_experiment_status
+        from kosmos.db.models import ExperimentStatus
         from uuid import uuid4
 
         try:
@@ -1548,7 +1550,17 @@ class ResearchDirectorAgent(BaseAgent):
             if self._code_generator is None:
                 self._code_generator = ExperimentCodeGenerator(use_templates=True, use_llm=True)
             if self._code_executor is None:
-                self._code_executor = CodeExecutor(max_retries=3)
+                try:
+                    self._code_executor = CodeExecutor(
+                        max_retries=3,
+                        sandbox_config={'image': self.config.get('sandbox_image', 'kosmos-sandbox:latest')},
+                    )
+                except RuntimeError as sandbox_err:  # DockerSandbox() failed: daemon unreachable
+                    logger.error(
+                        f"Sandbox unavailable; experiment {protocol_id} will be recorded as failed "
+                        f"and the run halted: {sandbox_err}"
+                    )
+                    self._sandbox_error = str(sandbox_err)
             if self._data_provider is None:
                 self._data_provider = DataProvider(
                     default_data_dir=self.data_path
@@ -1575,18 +1587,23 @@ class ResearchDirectorAgent(BaseAgent):
             code = self._code_generator.generate(protocol)
 
             # Execute code
-            if self.data_path:
+            if self._code_executor is None:
+                exec_result = ExecutionResult(
+                    success=False, error=self._sandbox_error, error_type="SandboxUnavailable"
+                )
+            elif self.data_path:
                 exec_result = self._code_executor.execute_with_data(
                     code, self.data_path, retry_on_error=True
                 )
             else:
                 exec_result = self._code_executor.execute(code, retry_on_error=True)
+            success = bool(exec_result.success)
 
             # Track rollout (Issue #58)
             self.rollout_tracker.increment("experiment_execution")
 
             # Extract metrics from execution result
-            return_value = exec_result.return_value if exec_result.return_value else {}
+            return_value = exec_result.return_value if (success and exec_result.return_value) else {}
             if isinstance(return_value, dict):
                 p_value = return_value.get("p_value")
                 effect_size = return_value.get("effect_size")
@@ -1604,6 +1621,8 @@ class ResearchDirectorAgent(BaseAgent):
             # Sanitize return_value for JSON serialization — filter out non-serializable
             # objects (e.g. sklearn Pipeline, numpy arrays) that would crash DB insert
             def _json_safe(obj):
+                if isinstance(obj, float) and (obj != obj or obj in (float('inf'), float('-inf'))):
+                    return None
                 if obj is None or isinstance(obj, (str, int, float, bool)):
                     return obj
                 if isinstance(obj, (list, tuple)):
@@ -1615,42 +1634,97 @@ class ResearchDirectorAgent(BaseAgent):
                     if isinstance(obj, (np.integer,)):
                         return int(obj)
                     if isinstance(obj, (np.floating,)):
-                        return float(obj)
+                        return _json_safe(float(obj))
                     if isinstance(obj, np.ndarray):
-                        return obj.tolist()
+                        return _json_safe(obj.tolist())
                 except ImportError:
                     pass
                 # Fallback: convert to string representation
                 return str(obj)
 
-            safe_data = _json_safe(return_value) if isinstance(return_value, dict) else {}
+            safe_data = (
+                _json_safe(return_value) if isinstance(return_value, dict)
+                else {"raw_return_value": str(return_value)}
+            )
             safe_stats = _json_safe(statistical_tests) if statistical_tests else {}
+            if self._code_executor is None:
+                executor_mode = "none"
+            else:
+                executor_mode = "sandbox" if self._code_executor.use_sandbox else "host"
+            safe_data.update({
+                "execution_success": success,
+                "error": exec_result.error,
+                "error_type": exec_result.error_type,
+                "stderr_tail": (exec_result.stderr or "")[-2000:],
+                "execution_time": exec_result.execution_time,
+                "executor_mode": executor_mode,
+                "data_path": self.data_path,
+            })
+            if "data_source" not in safe_data and exec_result.data_source:
+                safe_data["data_source"] = exec_result.data_source
 
-            # Store result in DB
+            def _finite(v):
+                try:
+                    v = float(v)
+                except (TypeError, ValueError):
+                    return None
+                return v if v == v and v not in (float('inf'), float('-inf')) else None
+
+            p_value, effect_size = _finite(p_value), _finite(effect_size)
+
+            # Store result and experiment status in DB. A failure here propagates to the
+            # handler's except so no phantom result id reaches the research plan.
             result_id = str(uuid4())
-            try:
-                with get_session() as session:
-                    create_result(
-                        session,
-                        id=result_id,
-                        experiment_id=protocol_id,
-                        data=safe_data,
-                        p_value=float(p_value) if p_value is not None else None,
-                        effect_size=float(effect_size) if effect_size is not None else None,
-                        statistical_tests=safe_stats,
-                    )
-            except Exception as db_err:
-                logger.error(f"Failed to store result in DB: {db_err}")
+            with get_session() as session:
+                create_result(
+                    session,
+                    id=result_id,
+                    experiment_id=protocol_id,
+                    data=safe_data,
+                    p_value=p_value,
+                    effect_size=effect_size,
+                    statistical_tests=safe_stats,
+                )
+                db_exp = update_experiment_status(
+                    session,
+                    protocol_id,
+                    ExperimentStatus.COMPLETED if success else ExperimentStatus.FAILED,
+                    error_message=None if success else f"{exec_result.error_type}: {exec_result.error}",
+                    execution_time_seconds=exec_result.execution_time or None,
+                )
+                db_exp.code_generated = code
 
-            logger.info(f"Experiment {protocol_id} executed, result {result_id}")
+            logger.info(
+                f"Experiment {protocol_id} executed (success={success}, "
+                f"error_type={exec_result.error_type}), result {result_id}"
+            )
 
             # Reset error streak on success
             self._reset_error_streak()
 
-            # Update research plan (thread-safe)
+            # Update research plan (thread-safe). Failed experiments leave the queue but are
+            # not counted as completed.
+            sandbox_unavailable = exec_result.error_type == "SandboxUnavailable"
             with self._research_plan_context():
                 self.research_plan.add_result(result_id)
-                self.research_plan.mark_experiment_complete(protocol_id)
+                if success:
+                    self.research_plan.mark_experiment_complete(protocol_id)
+                elif protocol_id in self.research_plan.experiment_queue:
+                    self.research_plan.experiment_queue.remove(protocol_id)
+                if sandbox_unavailable:
+                    self.research_plan.has_converged = True
+                    self.research_plan.convergence_reason = (
+                        f"halted: sandbox unavailable: {exec_result.error}"
+                    )
+
+            if sandbox_unavailable:
+                with self._workflow_context():
+                    self.workflow.transition_to(
+                        WorkflowState.ERROR,
+                        action="Sandbox unavailable; run halted",
+                        metadata={"reason": "sandbox_unavailable"},
+                    )
+                return
 
             # Persist result to knowledge graph
             if hypothesis_id:

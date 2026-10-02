@@ -9,6 +9,7 @@ Tracker for executing `evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md` (the 
 - **Never stage**: docker-compose.yml (owner's uncommitted hardening), `.literature_cache/`, human_review_audit.jsonl, the untracked docs/ and evaluation/ reports, `kosmos.db`. Stage files by name.
 - **Tests**: `python -m pytest <paths> --no-cov -p no:cacheprovider -q`. Never bare `pytest` (80 percent coverage gate, warnings are errors, tests/conftest.py loads .env so tests/e2e makes live calls).
 - **Line numbers** in the plan are exact at 6cfe7f6. Once an earlier item has edited a file, locate targets by the quoted code, not the number.
+- **Pre-existing failures** (master at 73f4d2a): `tests/unit/agents tests/unit/cli tests/unit/core tests/unit/db` has 98 failed and 62 errors (test_feedback 31, test_convergence 28, test_domain_router 27, test_memory 18, cli/test_commands 18, test_skill_loader 16, test_graph_commands 11, test_cache 8, core/test_workflow 2, test_research_director_loops 1 (`_actions_this_iteration` missing on the mock_director fixture)). To prove an item adds none, run the same paths in a master worktree (`git worktree add <scratchpad>/master_wt master`) and diff the `^(FAILED|ERROR) tests/` lines.
 - **Live calls authorized**: DeepSeek for plan Section 8 steps 5 and 25 with `--budget 1` (report cost). Claude subscription: one smoke test only (one `generate`, one `generate_structured`) during A-1; no research run on the subscription.
 - **Owner decisions** in plan Section 10 are binding. Decisions added 2026-10-02 at execution start: order P0 then P1 then providers then the rest; provider switching through CLI flags with .env as the default (spec A-2 below).
 
@@ -21,7 +22,7 @@ Status values: `todo`, `in progress`, `done`, `blocked` (reason in Notes). Work 
 | 1 | P0-1 | Generic template self-contained and syntax-safe | 5 / P0-1 | done | Deviation: plan test (c) asserted "kosmos" not in the prompt, which contradicts the required prompt text "Do NOT import kosmos"; the test asserts no DataAnalyzer / kosmos.execution and that the new instructions are present. Fixture Variable descriptions need at least 10 characters. |
 | 2 | P0-2 | `RESULT:` JSON footer in _execute_in_sandbox | 5 / P0-2 | done | SANDBOX_RESULT_FOOTER sits after DEFAULT_EXECUTION_TIMEOUT in kosmos/execution/executor.py |
 | 3 | P0-3 | execute_with_data skips the host prefix when sandboxed | 5 / P0-3 | done | |
-| 4 | P0-4 | Director reads exec_result.success, honest rows, fail-fast | 5 / P0-4 | in progress | |
+| 4 | P0-4 | Director reads exec_result.success, honest rows, fail-fast | 5 / P0-4 | done | Protocol to_dict/model_validate round-trip works (no defect). Additions beyond the plan text: `kosmos run` exits 1 after printing the halt reason; _json_safe also maps numpy NaN/inf to None; result data carries executor_mode (sandbox/host/none). |
 | 5 | P0-5 | TTest and Correlation templates self-contained | 5 / P0-5 | todo | |
 | 6 | P0-6 | LogLog and ML templates self-contained | 5 / P0-6 | todo | |
 | 7 | P0-CHECK | Build sandbox image; live end-of-P0 DeepSeek run | 5 / "End-of-P0 check"; 8 / steps 4b, 5 | todo | Live, DeepSeek, `--budget 1`. No code commit unless a fix is needed; record outcome and cost here |
