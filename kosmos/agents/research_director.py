@@ -672,17 +672,20 @@ class ResearchDirectorAgent(BaseAgent):
                 f"(attempt {self._consecutive_errors + 1})"
             )
 
-            # Use asyncio.sleep if an event loop is running to avoid blocking it;
-            # fall back to time.sleep for sync contexts.
+            # Never block the event loop: waiting on a coroutine scheduled on the loop this
+            # thread is running deadlocks until the timeout. Handlers run inside the CLI's
+            # loop, which already yields between steps, so the backoff is skipped there.
             try:
-                loop = asyncio.get_running_loop()
-                # Schedule the sleep as a task so we don't block the event loop
-                future = asyncio.run_coroutine_threadsafe(
-                    asyncio.sleep(backoff_seconds), loop
-                )
-                future.result(timeout=backoff_seconds + 5)
+                asyncio.get_running_loop()
+                in_loop = True
             except RuntimeError:
-                # No running event loop — safe to use blocking sleep
+                in_loop = False
+            if in_loop:
+                logger.info(
+                    f"{ERROR_RECOVERY_LOG_PREFIX} Inside event loop; skipping blocking "
+                    f"backoff of {backoff_seconds}s"
+                )
+            else:
                 time.sleep(backoff_seconds)
 
             # Re-evaluate what action to take

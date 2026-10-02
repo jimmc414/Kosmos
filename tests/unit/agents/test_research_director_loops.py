@@ -333,3 +333,50 @@ class TestLeaveRefining:
 
         assert db_director.workflow.current_state == WorkflowState.DESIGNING_EXPERIMENTS
         assert db_director.decide_next_action() == NextAction.DESIGN_EXPERIMENT
+
+
+class TestErrorRecoveryInEventLoop:
+    """P1-3: error recovery never blocks or raises from the event-loop thread."""
+
+    async def test_recovery_inside_loop_returns_quickly(self, mock_director):
+        import time as _time
+
+        mock_director.workflow.current_state = WorkflowState.EXECUTING
+        t0 = _time.monotonic()
+
+        mock_director._handle_error_with_recovery("CodeExecutor", "boom", recoverable=True)
+
+        assert _time.monotonic() - t0 < 1.0
+        assert mock_director._consecutive_errors == 1
+
+    async def test_breaker_reaches_error_state(self, mock_director):
+        from kosmos.agents.research_director import MAX_CONSECUTIVE_ERRORS
+
+        mock_director.workflow.current_state = WorkflowState.EXECUTING
+        last = None
+        for _ in range(MAX_CONSECUTIVE_ERRORS):
+            last = mock_director._handle_error_with_recovery("CodeExecutor", "boom", recoverable=True)
+
+        targets = [c.args[0] for c in mock_director.workflow.transition_to.call_args_list]
+        assert WorkflowState.ERROR in targets
+        assert last == NextAction.ERROR_RECOVERY
+
+    async def test_error_recovery_resumes_generation(self, mock_director):
+        mock_director.workflow.current_state = WorkflowState.ERROR
+        mock_director.research_plan.hypothesis_pool = ["h1"]
+        mock_director.research_plan.get_untested_hypotheses.return_value = ["h1"]
+        mock_director._consecutive_errors = 3
+
+        assert mock_director.decide_next_action() == NextAction.ERROR_RECOVERY
+        await mock_director._execute_next_action(NextAction.ERROR_RECOVERY)
+
+        targets = [c.args[0] for c in mock_director.workflow.transition_to.call_args_list]
+        assert WorkflowState.GENERATING_HYPOTHESES in targets
+        assert mock_director._consecutive_errors == 0
+
+    def test_recovery_outside_loop_backs_off(self, mock_director):
+        mock_director.workflow.current_state = WorkflowState.EXECUTING
+        with patch("time.sleep") as mock_sleep:
+            mock_director._handle_error_with_recovery("CodeExecutor", "boom", recoverable=True)
+
+        mock_sleep.assert_called_once_with(2)
