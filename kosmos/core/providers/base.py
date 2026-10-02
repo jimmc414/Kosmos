@@ -401,6 +401,19 @@ class LLMProvider(ABC):
         if usage.cost_usd is not None:
             self.total_cost_usd += usage.cost_usd
 
+        # Feed the process-wide metrics collector so budget enforcement sees every call
+        try:
+            from kosmos.core.metrics import get_metrics
+            get_metrics().record_api_call(
+                model=usage.model or getattr(self, "model", "unknown"),
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                duration_seconds=0.0,
+                success=True,
+            )
+        except Exception as e:
+            logger.debug(f"Metrics recording skipped: {e}")
+
     def reset_usage_stats(self):
         """Reset usage statistics to zero."""
         self.total_input_tokens = 0

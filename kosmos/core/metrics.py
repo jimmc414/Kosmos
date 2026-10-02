@@ -754,12 +754,15 @@ class MetricsCollector:
             if datetime.fromisoformat(call["timestamp"]) >= period_start
         ]
 
-        # Sum tokens
-        total_input = sum(call.get("input_tokens", 0) for call in period_calls)
-        total_output = sum(call.get("output_tokens", 0) for call in period_calls)
-
-        # Calculate cost using canonical pricing (default Sonnet)
-        return get_model_cost("claude-sonnet-4-5", total_input, total_output)
+        # Price each call by the model that served it
+        return sum(
+            get_model_cost(
+                call.get("model") or "claude-sonnet-4-5",
+                call.get("input_tokens", 0),
+                call.get("output_tokens", 0),
+            )
+            for call in period_calls
+        )
 
     def _calculate_period_requests(self) -> int:
         """Calculate API requests for current budget period."""

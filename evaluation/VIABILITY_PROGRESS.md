@@ -30,7 +30,7 @@ Status values: `todo`, `in progress`, `done`, `blocked` (reason in Notes). Work 
 | 9 | P1-2 | Leave REFINING after every refinement pass | 5 / P1-2 | done | Loop-closure test needs an untested hypothesis in the pool: with none, decide_next_action in REFINING converges before refining, so the dead end only reproduces while untested work remains. `_leave_refining` sits just above `_handle_refine_hypothesis_action`. |
 | 10 | P1-3 | Error recovery never blocks the event loop | 5 / P1-3 | done | Tests (c) ERROR_RECOVERY and (d) sync backoff also pass on the old code: those paths were unreachable, not broken. |
 | 11 | P1-4 | Convergence detector gets real hypotheses and results | 5 / P1-4 | done | Test lives in tests/unit/agents/test_research_director_execute.py. Optional criteria (novelty_decline, diminishing_returns) are now live and may stop runs earlier. |
-| 12 | P1-5 | `--budget` armed, provider calls recorded, per-model pricing | 5 / P1-5 | todo | After committing, re-run Section 8 step 5 once (authorized, `--budget 1`) to confirm the end display renders and a non-zero cost is reported |
+| 12 | P1-5 | `--budget` armed, provider calls recorded, per-model pricing | 5 / P1-5 | done | e2e test_budget_enforcement -k halts_on_exceeded still passes. Post-commit live re-run of step 5: see the session log |
 | 13 | A-1 | Anthropic via KOSMOS_ANTHROPIC_API_KEY and Claude Code subscription | 5 / A-1 | todo | Includes the one-call live subscription smoke test |
 | 14 | A-2 | `--provider` / `--model` flags on `kosmos run` | this file, "A-2 spec" | todo | Not in the plan; spec below |
 | 15 | P2-0 | Result columns for execution, validation, provenance, cost | 5 / P2-0 | todo | |

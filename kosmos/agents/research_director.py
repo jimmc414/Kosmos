@@ -100,6 +100,13 @@ class ResearchDirectorAgent(BaseAgent):
         # Dataset path for experiments
         self.data_path = self.config.get("data_path")
 
+        # Arm budget enforcement for --budget; decide_next_action enforces it
+        budget_usd = self.config.get("budget_usd")
+        if budget_usd:
+            from kosmos.core.metrics import get_metrics
+            get_metrics().configure_budget(limit_usd=float(budget_usd))
+            logger.info(f"[BUDGET] Enforcement armed at ${float(budget_usd):.2f}")
+
         # Configuration
         self.max_iterations = self.config.get("max_iterations", 10)
         self.max_runtime_hours = self.config.get("max_runtime_hours", 12.0)  # Issue #56
