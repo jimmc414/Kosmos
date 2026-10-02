@@ -7,6 +7,7 @@ Tests template matching, code generation, LLM fallback, and validation.
 import ast
 import contextlib
 import io
+import json
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
@@ -376,8 +377,8 @@ class TestCodeGeneration:
 
         assert code is not None
         assert "import pandas as pd" in code
-        assert "DataAnalyzer" in code
-        assert "log_log_scaling_analysis" in code
+        assert "kosmos" not in code
+        assert "log10" in code
 
     def test_ml_code_generation(self, code_generator, ml_protocol):
         """Test ML code generation."""
@@ -385,8 +386,8 @@ class TestCodeGeneration:
 
         assert code is not None
         assert "import pandas as pd" in code
-        assert "MLAnalyzer" in code
-        assert "run_experiment" in code or "cross_validate" in code
+        assert "LogisticRegression" in code and "kosmos" not in code
+        assert "cross_val_score" in code
 
     def test_generated_code_is_valid_python(self, code_generator, ttest_protocol):
         """Test generated code is valid Python syntax."""
@@ -483,6 +484,35 @@ class TestSelfContainedTemplates:
         assert results["method"] == "pearson"
         assert results["effect_size"] == results["correlation"]
         assert "Correlation (pearson)" in stdout
+
+    def test_loglog_code_recovers_exponent(self, code_generator, loglog_protocol, tmp_path):
+        csv = tmp_path / "loglog.csv"
+        xs = [1.0 + 3.0 * i for i in range(30)]
+        csv.write_text("x,y\n" + "".join(f"{x},{2 * x ** 0.75}\n" for x in xs))
+
+        code = code_generator.generate(loglog_protocol)
+        results, _ = self._run(code, csv)
+
+        assert "kosmos" not in code
+        assert results["data_source"] == "file"
+        assert abs(results["power_law_exponent"] - 0.75) < 0.05
+
+    def test_ml_code_runs_on_file(self, code_generator, ml_protocol, tmp_path):
+        from sklearn.datasets import make_classification
+
+        X, y = make_classification(n_samples=60, n_features=10, random_state=0)
+        csv = tmp_path / "ml.csv"
+        header = ",".join(f"f{i}" for i in range(10)) + ",target"
+        lines = [",".join(str(v) for v in row) + f",{label}" for row, label in zip(X, y)]
+        csv.write_text(header + "\n" + "\n".join(lines) + "\n")
+
+        code = code_generator.generate(ml_protocol)
+        results, _ = self._run(code, csv)
+
+        assert "kosmos" not in code
+        assert results["data_source"] == "file"
+        assert 0 <= results["train_test_results"]["accuracy"] <= 1
+        json.dumps(results)  # no model objects or timestamps
 
     @pytest.mark.parametrize("test_type", [StatisticalTest.T_TEST, StatisticalTest.CORRELATION])
     def test_quoted_names_generate_valid_code(self, code_generator, test_type):
@@ -659,7 +689,7 @@ class TestCodeGeneratorIntegration:
         code = code_generator.generate(ml_protocol)
 
         assert "import" in code
-        assert "MLAnalyzer" in code
+        assert "LogisticRegression" in code and "kosmos" not in code
         assert "results" in code
 
         # Verify valid syntax
