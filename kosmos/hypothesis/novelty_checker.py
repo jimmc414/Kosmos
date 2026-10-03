@@ -8,6 +8,7 @@ Checks if generated hypotheses are novel by:
 4. Generating novelty scores and reports
 """
 
+import hashlib
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
@@ -15,13 +16,52 @@ import numpy as np
 
 from kosmos.models.hypothesis import Hypothesis, NoveltyReport
 from kosmos.literature.unified_search import UnifiedLiteratureSearch
-from kosmos.literature.base_client import PaperMetadata
+from kosmos.literature.base_client import PaperMetadata, PaperSource
 from kosmos.knowledge.embeddings import get_embedder
 from kosmos.knowledge.vector_db import get_vector_db
 from kosmos.db.models import Hypothesis as DBHypothesis
 from kosmos.db import get_session
 
 logger = logging.getLogger(__name__)
+
+# TF-IDF similarity when no embedding model is loaded; Jaccard if scikit-learn is missing
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+except ImportError:
+    TfidfVectorizer = None
+
+# Most recent same-domain hypotheses compared against each new one
+MAX_EXISTING_HYPOTHESES = 500
+
+
+def _clamp_similarity(similarity: float) -> float:
+    """Clamp to [0, 1]; a non-finite value (nan from 0/0) means no evidence of similarity."""
+    if not np.isfinite(similarity):
+        return 0.0
+    return float(max(0.0, min(1.0, similarity)))
+
+
+def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity in [0, 1]; 0.0 when either vector is zero."""
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return _clamp_similarity(np.dot(a, b) / (na * nb))
+
+
+def _fit_tfidf(corpus: List[str]):
+    """Fit TF-IDF on the corpus; None when nothing but stop words remains."""
+    try:
+        return TfidfVectorizer(
+            ngram_range=(1, 2), stop_words="english", sublinear_tf=True
+        ).fit_transform(corpus)
+    except ValueError:  # empty vocabulary
+        return None
+
+
+def _row_cosine(matrix, i: int, j: int) -> float:
+    """Cosine of two TF-IDF rows (rows are L2-normalized, so the dot product)."""
+    return _clamp_similarity(matrix[i].multiply(matrix[j]).sum())
 
 
 class NoveltyChecker:
@@ -62,10 +102,19 @@ class NoveltyChecker:
         self.max_similar_papers = max_similar_papers
         self.use_vector_db = use_vector_db
 
-        # Components
+        # Components. An embedder without a loaded model returns zero vectors,
+        # so treat it as absent and use TF-IDF similarity instead.
         self.literature_search = UnifiedLiteratureSearch()
-        self.embedder = get_embedder() if use_vector_db else None
+        emb = get_embedder() if use_vector_db else None
+        self.embedder = emb if (emb is not None and emb.is_available) else None
         self.vector_db = get_vector_db() if use_vector_db else None
+
+        # TF-IDF state for the no-embedding path: the hypothesis pool of the
+        # current check, fitted once, plus a cache for pairs outside the pool
+        self._pool_texts: List[str] = []
+        self._pool_matrix = None
+        self._pool_index: Dict[str, int] = {}
+        self._pair_cache: Dict[Tuple[str, str], float] = {}
 
         logger.info(f"Initialized NoveltyChecker with threshold={similarity_threshold}")
 
@@ -87,6 +136,7 @@ class NoveltyChecker:
             ```
         """
         logger.info(f"Checking novelty for hypothesis: {hypothesis.statement[:50]}...")
+        self._set_similarity_pool([])
 
         # Step 1: Search literature for similar work
         similar_papers = self._search_similar_literature(hypothesis)
@@ -234,19 +284,32 @@ class NoveltyChecker:
             # Search vector DB
             results = self.vector_db.search(query, top_k=20)
 
-            # Convert results to PaperMetadata
+            # Convert results to PaperMetadata. The stored metadata holds no
+            # abstract or authors (vector_db._paper_metadata); the document
+            # text is "title [SEP] abstract".
             papers = []
             for result in results:
-                # Reconstruct paper from metadata
-                metadata = result.get("metadata", {})
+                metadata = result.get("metadata") or {}
+                title = metadata.get("title", "")
+                paper_id = (
+                    metadata.get("id")
+                    or metadata.get("doi")
+                    or metadata.get("arxiv_id")
+                    or f"vec_{hashlib.sha1(title.encode('utf-8')).hexdigest()[:12]}"
+                )
+                try:
+                    source = PaperSource(metadata.get("source", "unknown"))
+                except ValueError:
+                    source = PaperSource.UNKNOWN
                 paper = PaperMetadata(
-                    title=metadata.get("title", ""),
-                    authors=metadata.get("authors", []),
-                    abstract=metadata.get("abstract", ""),
-                    year=metadata.get("year"),
+                    id=paper_id,
+                    source=source,
+                    title=title,
+                    abstract=result.get("document", ""),
+                    year=metadata.get("year") or None,
                     doi=metadata.get("doi"),
                     arxiv_id=metadata.get("arxiv_id"),
-                    source=metadata.get("source", "unknown")
+                    pubmed_id=metadata.get("pubmed_id"),
                 )
                 papers.append(paper)
 
@@ -269,18 +332,19 @@ class NoveltyChecker:
         """
         try:
             with get_session() as session:
-                # Query hypotheses in same domain
-                db_hypotheses = session.query(DBHypothesis).filter(
+                # Most recent hypotheses in the same domain, excluding this one
+                query = session.query(DBHypothesis).filter(
                     DBHypothesis.domain == hypothesis.domain
-                ).all()
+                )
+                if hypothesis.id:
+                    query = query.filter(DBHypothesis.id != hypothesis.id)
+                db_hypotheses = query.order_by(
+                    DBHypothesis.created_at.desc()
+                ).limit(MAX_EXISTING_HYPOTHESES).all()
 
                 # Convert to Pydantic models
                 existing_hypotheses = []
                 for db_hyp in db_hypotheses:
-                    # Skip self if it's already in DB
-                    if hypothesis.id and db_hyp.id == hypothesis.id:
-                        continue
-
                     hyp = Hypothesis(
                         id=db_hyp.id,
                         research_question=db_hyp.research_question,
@@ -292,18 +356,19 @@ class NoveltyChecker:
                     )
                     existing_hypotheses.append(hyp)
 
-                # Filter by similarity
-                similar = []
+                self._set_similarity_pool(
+                    [hypothesis.statement] + [h.statement for h in existing_hypotheses]
+                )
+
+                # Filter by similarity (lower threshold for preliminary filtering),
+                # then sort highest first
+                scored = []
                 for existing in existing_hypotheses:
                     similarity = self._compute_hypothesis_similarity(hypothesis, existing)
-                    if similarity >= 0.5:  # Lower threshold for preliminary filtering
-                        similar.append(existing)
-
-                # Sort by similarity (highest first)
-                similar.sort(
-                    key=lambda h: self._compute_hypothesis_similarity(hypothesis, h),
-                    reverse=True
-                )
+                    if similarity >= 0.5:
+                        scored.append((similarity, existing))
+                scored.sort(key=lambda pair: pair[0], reverse=True)
+                similar = [existing for _, existing in scored]
 
                 logger.info(f"Found {len(similar)} similar existing hypotheses")
                 return similar
@@ -346,12 +411,7 @@ class NoveltyChecker:
             hyp_embedding = self.embedder.embed_query(hyp_text)
             paper_embedding = self.embedder.embed_query(paper_text)
 
-            # Cosine similarity
-            similarity = np.dot(hyp_embedding, paper_embedding) / (
-                np.linalg.norm(hyp_embedding) * np.linalg.norm(paper_embedding)
-            )
-
-            return float(max(0.0, min(1.0, similarity)))
+            return _cosine_similarity(hyp_embedding, paper_embedding)
 
         except Exception as e:
             logger.error(f"Error computing similarity: {e}")
@@ -384,19 +444,67 @@ class NoveltyChecker:
             emb1 = self.embedder.embed_query(text1)
             emb2 = self.embedder.embed_query(text2)
 
-            similarity = np.dot(emb1, emb2) / (
-                np.linalg.norm(emb1) * np.linalg.norm(emb2)
-            )
-
-            return float(max(0.0, min(1.0, similarity)))
+            return _cosine_similarity(emb1, emb2)
 
         except Exception as e:
             logger.error(f"Error computing hypothesis similarity: {e}")
             return 0.0
 
+    def _set_similarity_pool(self, texts: List[str]) -> None:
+        """
+        Set the hypothesis pool that TF-IDF weights are fitted on.
+
+        Fits once so every pair inside the pool is a lookup; pairs with a text
+        outside the pool (papers) are fitted on demand and cached.
+
+        Args:
+            texts: Statements in the current pool (empty to reset)
+        """
+        self._pool_texts = list(dict.fromkeys(t for t in texts if t and t.strip()))
+        self._pool_matrix = None
+        self._pool_index = {}
+        self._pair_cache = {}
+        if TfidfVectorizer is None or len(self._pool_texts) < 2:
+            return
+        self._pool_matrix = _fit_tfidf(self._pool_texts)
+        if self._pool_matrix is not None:
+            self._pool_index = {t: i for i, t in enumerate(self._pool_texts)}
+
     def _keyword_similarity(self, text1: str, text2: str) -> float:
         """
-        Simple keyword-based similarity (fallback).
+        TF-IDF cosine similarity (fallback when no embedding model is loaded).
+
+        Uses word unigrams and bigrams with English stop words removed, fitted
+        on the pair plus the current hypothesis pool, so words every hypothesis
+        in the domain shares carry little weight. Falls back to Jaccard word
+        overlap when scikit-learn is unavailable.
+
+        Args:
+            text1: First text
+            text2: Second text
+
+        Returns:
+            float: Similarity score (0.0-1.0)
+        """
+        if TfidfVectorizer is None:
+            return self._jaccard_similarity(text1, text2)
+        if not (text1 and text1.strip() and text2 and text2.strip()):
+            return 0.0
+
+        i, j = self._pool_index.get(text1), self._pool_index.get(text2)
+        if i is not None and j is not None:
+            return _row_cosine(self._pool_matrix, i, j)
+
+        key = (text1, text2)
+        if key not in self._pair_cache:
+            corpus = [text1, text2] + [t for t in self._pool_texts if t not in key]
+            matrix = _fit_tfidf(corpus)
+            self._pair_cache[key] = _row_cosine(matrix, 0, 1) if matrix is not None else 0.0
+        return self._pair_cache[key]
+
+    def _jaccard_similarity(self, text1: str, text2: str) -> float:
+        """
+        Jaccard word-overlap similarity (used when scikit-learn is unavailable).
 
         Args:
             text1: First text

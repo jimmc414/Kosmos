@@ -49,6 +49,9 @@ ERROR_RECOVERY_LOG_PREFIX = "[ERROR-RECOVERY]"
 # Infinite loop prevention (Issue #51)
 MAX_ACTIONS_PER_ITERATION = 50  # Force convergence if exceeded
 
+# Refined or variant hypotheses at least this similar to existing work are dropped
+NEAR_DUPLICATE_SIMILARITY = 0.85
+
 
 class ResearchDirectorAgent(BaseAgent):
     """
@@ -156,6 +159,7 @@ class ResearchDirectorAgent(BaseAgent):
         self._data_provider = None
         self._data_analyst = None
         self._hypothesis_refiner = None
+        self._novelty_checker = None
         self._sandbox_error: Optional[str] = None
 
         # Message correlation tracking
@@ -1953,6 +1957,31 @@ class ResearchDirectorAgent(BaseAgent):
                     action=f"Refinement complete; {len(untested)} untested hypotheses"
                 )
 
+    def _is_near_duplicate(self, hypothesis: Hypothesis) -> bool:
+        """
+        True when a refined or variant hypothesis nearly restates existing work.
+
+        Runs the novelty check (which also sets hypothesis.novelty_score) and
+        compares its max_similarity with NEAR_DUPLICATE_SIMILARITY. Fails open:
+        a hypothesis whose check raises is kept.
+        """
+        try:
+            if self._novelty_checker is None:
+                from kosmos.hypothesis.novelty_checker import NoveltyChecker
+                self._novelty_checker = NoveltyChecker()
+            report = self._novelty_checker.check_novelty(hypothesis)
+        except Exception as e:
+            logger.warning(f"Novelty check failed, keeping hypothesis: {e}")
+            return False
+
+        if report.max_similarity >= NEAR_DUPLICATE_SIMILARITY:
+            logger.info(
+                f"Dropped near-duplicate hypothesis (similarity {report.max_similarity:.2f}): "
+                f"{hypothesis.statement}"
+            )
+            return True
+        return False
+
     async def _handle_refine_hypothesis_action(self, hypothesis_id: str):
         """
         Handle REFINE_HYPOTHESIS action by calling HypothesisRefiner directly.
@@ -2039,7 +2068,7 @@ class ResearchDirectorAgent(BaseAgent):
 
             elif decision == RetirementDecision.REFINE:
                 refined = self._hypothesis_refiner.refine_hypothesis(pydantic_hyp, latest_result)
-                if refined and refined.id:
+                if refined and refined.id and not self._is_near_duplicate(refined):
                     # Store refined hypothesis in DB
                     try:
                         with get_session() as session:
@@ -2063,7 +2092,7 @@ class ResearchDirectorAgent(BaseAgent):
                     pydantic_hyp, latest_result, num_variants=2
                 )
                 for variant in variants:
-                    if variant and variant.id:
+                    if variant and variant.id and not self._is_near_duplicate(variant):
                         try:
                             with get_session() as session:
                                 db_create_hypothesis(

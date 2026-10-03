@@ -335,6 +335,55 @@ class TestLeaveRefining:
         assert db_director.decide_next_action() == NextAction.DESIGN_EXPERIMENT
 
 
+class TestRefinementDuplicateFilter:
+    """P2-5: refined and variant hypotheses that restate existing work are not stored."""
+
+    async def test_near_duplicate_variant_dropped(self, db_director):
+        from kosmos.db import get_session, operations
+        from kosmos.hypothesis.novelty_checker import NoveltyChecker
+        from kosmos.hypothesis.refiner import RetirementDecision
+        from kosmos.knowledge.embeddings import reset_embedder
+        from kosmos.models.hypothesis import Hypothesis
+        from tests.unit.agents.conftest import EXP_ID, H_ID
+
+        with get_session() as session:
+            operations.create_result(
+                session, id="res-dup-1", experiment_id=EXP_ID,
+                data={"execution_success": True}, p_value=0.01,
+            )
+        db_director.workflow.current_state = WorkflowState.REFINING
+
+        def variant(vid, statement):
+            return Hypothesis(
+                id=vid, research_question="Does CO2 predict temperature?", statement=statement,
+                rationale="Variant spawned from an inconclusive result", domain="climate",
+            )
+
+        duplicate = variant("var-dup", "CO2 concentration predicts the temperature anomaly")
+        distinct = variant("var-new", "Volcanic aerosol index lowers the temperature anomaly a year later")
+        db_director._hypothesis_refiner = Mock(
+            evaluate_hypothesis_status=Mock(return_value=RetirementDecision.SPAWN_VARIANT),
+            spawn_variant=Mock(return_value=[duplicate, distinct]),
+        )
+
+        reset_embedder()
+        try:
+            with patch('kosmos.knowledge.embeddings.HAS_SENTENCE_TRANSFORMERS', False), \
+                 patch('kosmos.hypothesis.novelty_checker.get_vector_db', return_value=None), \
+                 patch('kosmos.hypothesis.novelty_checker.UnifiedLiteratureSearch') as mock_search:
+                mock_search.return_value.search.return_value = []
+                db_director._novelty_checker = NoveltyChecker()
+                await db_director._handle_refine_hypothesis_action(H_ID)
+        finally:
+            reset_embedder()
+
+        with get_session() as session:
+            assert operations.get_hypothesis(session, "var-dup") is None
+            assert operations.get_hypothesis(session, "var-new") is not None
+        assert "var-dup" not in db_director.research_plan.hypothesis_pool
+        assert "var-new" in db_director.research_plan.hypothesis_pool
+
+
 class TestErrorRecoveryInEventLoop:
     """P1-3: error recovery never blocks or raises from the event-loop thread."""
 

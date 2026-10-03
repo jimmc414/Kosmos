@@ -66,7 +66,6 @@ dependencies = [
     "semanticscholar>=0.8.0",     # Semantic Scholar API
     "biopython>=1.81",            # PubMed E-utilities
     "pymupdf>=1.23.0",            # PDF text extraction
-    "sentence-transformers>=2.2.0", # SPECTER embeddings
     "bibtexparser>=1.4.0",        # BibTeX parsing
     "pybtex>=0.24.0",             # Bibliography generation
     "pikepdf>=8.10.0",            # PDF metadata
@@ -147,6 +146,12 @@ execution = [
 monitoring = [
     # Prometheus metrics
     "prometheus-client>=0.19.0",
+]
+
+embeddings = [
+    # SPECTER embeddings for semantic novelty and vector paper search (pulls torch).
+    # Without it, novelty checking uses TF-IDF similarity.
+    "sentence-transformers>=2.2.0",
 ]
 
 all = [

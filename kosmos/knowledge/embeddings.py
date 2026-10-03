@@ -14,12 +14,18 @@ from kosmos.literature.base_client import PaperMetadata
 
 logger = logging.getLogger(__name__)
 
-# Optional dependency - sentence_transformers
+# Optional dependency - sentence_transformers (the "embeddings" extra).
+# Catch any import failure: a broken torch or transformers install raises more
+# than ImportError, and novelty checking falls back to TF-IDF either way.
 try:
     from sentence_transformers import SentenceTransformer
     HAS_SENTENCE_TRANSFORMERS = True
-except ImportError:
-    logger.warning("sentence_transformers not installed. Install with: pip install sentence-transformers")
+except Exception as _import_error:
+    logger.warning(
+        "sentence_transformers unavailable (%s); SPECTER embeddings disabled. "
+        "Install with: pip install \"kosmos-ai-scientist[embeddings]\"",
+        _import_error,
+    )
     HAS_SENTENCE_TRANSFORMERS = False
     SentenceTransformer = None
 
@@ -86,6 +92,11 @@ class PaperEmbedder:
         except Exception as e:
             logger.error(f"Error loading SPECTER model: {e}")
             raise
+
+    @property
+    def is_available(self) -> bool:
+        """True when a real embedding model is loaded (not the zero-vector fallback)."""
+        return self.model is not None
 
     def embed_paper(self, paper: PaperMetadata) -> np.ndarray:
         """
