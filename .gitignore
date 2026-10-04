@@ -10,6 +10,8 @@ output.txt
 # Claude Code settings (keep commands/ directory)
 .claude/settings.local.json
 .claude/*.json
+# the factory's deny-list is tracked (Session 0, 2026-10-04)
+!.claude/settings.json
 
 # Editors
 .project
@@ -152,7 +154,8 @@ data/*.h5ad
 data/*.parquet
 data/*.h5
 !data/benchmarks/
-CLAUDE.md
+# CLAUDE.md is the tracked session contract since Session 0 (2026-10-04)
+!/CLAUDE.md
 
 # Per-run artifacts (KOSMOS_ARTIFACTS_DIR default); tracked artifacts/baseline_* stay
 artifacts/runs/
