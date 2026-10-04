@@ -1699,6 +1699,7 @@ class ResearchDirectorAgent(BaseAgent):
             # Store result and experiment status in DB. A failure here propagates to the
             # handler's except so no phantom result id reaches the research plan.
             result_id = str(uuid4())
+            error_message = None if success else f"{exec_result.error_type}: {exec_result.error}"
             with get_session() as session:
                 create_result(
                     session,
@@ -1708,15 +1709,18 @@ class ResearchDirectorAgent(BaseAgent):
                     p_value=p_value,
                     effect_size=effect_size,
                     statistical_tests=safe_stats,
+                    execution_success=success,
+                    data_source=None if safe_data.get("data_source") is None else str(safe_data["data_source"]),
+                    error_message=error_message,
+                    code=code,
                 )
-                db_exp = update_experiment_status(
+                update_experiment_status(
                     session,
                     protocol_id,
                     ExperimentStatus.COMPLETED if success else ExperimentStatus.FAILED,
-                    error_message=None if success else f"{exec_result.error_type}: {exec_result.error}",
+                    error_message=error_message,
                     execution_time_seconds=exec_result.execution_time or None,
                 )
-                db_exp.code_generated = code
 
             logger.info(
                 f"Experiment {protocol_id} executed (success={success}, "

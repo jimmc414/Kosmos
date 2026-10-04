@@ -37,6 +37,10 @@ class HypothesisStatus(str, enum.Enum):
     INCONCLUSIVE = "inconclusive"
 
 
+# Allowed values of Result.validation_status
+RESULT_VALIDATION_STATUSES = ("validated", "rejected", "unvalidated", "rejected_unsafe")
+
+
 class Experiment(Base):
     """
     Experiment model.
@@ -134,6 +138,21 @@ class Result(Base):
 
     # Visualization
     figures = Column(JSON, nullable=True)  # Paths to generated figures
+
+    # Execution and provenance
+    run_id = Column(String, nullable=True)
+    execution_success = Column(Boolean, nullable=True)
+    data_source = Column(String, nullable=True)  # file, synthetic, ...
+    random_seed = Column(Integer, nullable=True)
+    provenance = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Validation: one of RESULT_VALIDATION_STATUSES
+    validation_status = Column(String, nullable=True)
+    validation_detail = Column(JSON, nullable=True)  # null model, ScholarEval, recomputation
+
+    # Cost of the LLM calls attributed to this result
+    cost_usd = Column(Float, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

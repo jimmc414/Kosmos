@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import event, func
 from kosmos.db.models import (
     Experiment, Hypothesis, Result, Paper, AgentRecord, ResearchSession,
-    ExperimentStatus, HypothesisStatus
+    ExperimentStatus, HypothesisStatus, RESULT_VALIDATION_STATUSES
 )
 from datetime import datetime, timezone
 import logging
@@ -42,6 +42,18 @@ def _validate_json_list(value: Any, field_name: str, required: bool = True) -> N
         return
     if not isinstance(value, list):
         raise TypeError(f"{field_name} must be a list, got {type(value).__name__}")
+
+
+def _validate_validation_status(value: Optional[str], required: bool = True) -> None:
+    """Validate that value is one of RESULT_VALIDATION_STATUSES."""
+    if value is None:
+        if required:
+            raise ValueError("validation_status is required")
+        return
+    if value not in RESULT_VALIDATION_STATUSES:
+        raise ValueError(
+            f"validation_status must be one of {', '.join(RESULT_VALIDATION_STATUSES)}, got {value!r}"
+        )
 
 
 # ============================================================================
@@ -347,11 +359,35 @@ def create_result(
     supports_hypothesis: Optional[bool] = None,
     p_value: Optional[float] = None,
     effect_size: Optional[float] = None,
+    run_id: Optional[str] = None,
+    execution_success: Optional[bool] = None,
+    data_source: Optional[str] = None,
+    random_seed: Optional[int] = None,
+    provenance: Optional[Dict[str, Any]] = None,
+    validation_status: Optional[str] = None,
+    validation_detail: Optional[Dict[str, Any]] = None,
+    cost_usd: Optional[float] = None,
+    error_message: Optional[str] = None,
+    code: Optional[str] = None,
 ) -> Result:
-    """Create a new result."""
+    """Create a new result.
+
+    When code is given it is stored as the executed code of experiment_id
+    (Experiment.code_generated) in the same commit.
+    """
     _validate_json_dict(data, "data", required=True)
     _validate_json_dict(statistical_tests, "statistical_tests", required=False)
     _validate_json_list(key_findings, "key_findings", required=False)
+    _validate_json_dict(provenance, "provenance", required=False)
+    _validate_json_dict(validation_detail, "validation_detail", required=False)
+    _validate_validation_status(validation_status, required=False)
+
+    if code is not None:
+        experiment = get_experiment(session, experiment_id)
+        if not experiment:
+            raise ValueError(f"Experiment {experiment_id} not found")
+        experiment.code_generated = code
+
     result = Result(
         id=id,
         experiment_id=experiment_id,
@@ -362,6 +398,15 @@ def create_result(
         supports_hypothesis=supports_hypothesis,
         p_value=p_value,
         effect_size=effect_size,
+        run_id=run_id,
+        execution_success=execution_success,
+        data_source=data_source,
+        random_seed=random_seed,
+        provenance=provenance,
+        validation_status=validation_status,
+        validation_detail=validation_detail,
+        cost_usd=cost_usd,
+        error_message=error_message,
     )
     session.add(result)
     session.commit()
@@ -418,6 +463,52 @@ def update_result_analysis(
 
     logger.info(f"Updated result {result_id} analysis: supports_hypothesis={supports_hypothesis}")
     return result
+
+
+def update_result_validation(
+    session: Session,
+    result_id: str,
+    status: str,
+    detail: Optional[Dict[str, Any]] = None,
+    supports_hypothesis: Optional[bool] = None,
+    cost_usd: Optional[float] = None,
+) -> Result:
+    """Persist the validation outcome for a result.
+
+    validation_status and supports_hypothesis are always written, so None for
+    supports_hypothesis records an inconclusive verdict. cost_usd is written
+    only when given.
+    """
+    _validate_validation_status(status, required=True)
+    _validate_json_dict(detail, "detail", required=False)
+    result = get_result(session, result_id)
+    if not result:
+        raise ValueError(f"Result {result_id} not found")
+
+    result.validation_status = status
+    result.validation_detail = detail
+    result.supports_hypothesis = supports_hypothesis
+    if cost_usd is not None:
+        result.cost_usd = cost_usd
+
+    session.commit()
+    session.refresh(result)
+
+    logger.info(
+        f"Updated result {result_id} validation: status={status}, "
+        f"supports_hypothesis={supports_hypothesis}"
+    )
+    return result
+
+
+def get_results_for_run(session: Session, run_id: str) -> List[Result]:
+    """Get all results recorded for a research run, oldest first."""
+    return (
+        session.query(Result)
+        .filter(Result.run_id == run_id)
+        .order_by(Result.created_at)
+        .all()
+    )
 
 
 def get_results_for_experiment(

@@ -33,6 +33,12 @@ def _rows():
         )
 
 
+def _result_columns():
+    with get_session() as session:
+        r = session.query(Result).one()
+        return r.execution_success, r.data_source, r.error_message
+
+
 def _transitions(d):
     return [c.args[0] for c in d.workflow.transition_to.call_args_list]
 
@@ -53,6 +59,7 @@ async def test_success_stores_honest_row(director):
     assert data["execution_success"] is True
     assert data["data_source"] == "file"
     assert data["executor_mode"] == "sandbox"
+    assert _result_columns() == (True, "file", None)
     assert p_value == 0.01
     assert status == ExperimentStatus.COMPLETED
     assert code == CODE
@@ -80,6 +87,7 @@ async def test_failure_stores_failed_row(director):
     assert "KeyError" in data["stderr_tail"]
     assert status == ExperimentStatus.FAILED
     assert error_message.startswith("ExecutionError:")
+    assert _result_columns() == (False, None, error_message)
     assert director.research_plan.completed_experiments == []
     assert EXP_ID not in director.research_plan.experiment_queue
     assert WorkflowState.ANALYZING in _transitions(director)
