@@ -21,11 +21,11 @@ from tests.unit.agents.conftest import EXP_ID, H_ID
 RESULT_ID = "res-analyze-1"
 
 
-def _seed_result(data, p_value=None, effect_size=None):
+def _seed_result(data, p_value=None, effect_size=None, **columns):
     with get_session() as session:
         operations.create_result(
             session, id=RESULT_ID, experiment_id=EXP_ID, data=data,
-            p_value=p_value, effect_size=effect_size,
+            p_value=p_value, effect_size=effect_size, **columns,
         )
 
 
@@ -46,18 +46,27 @@ def _stored():
         return r.supports_hypothesis, r.interpretation, r.key_findings, h.status
 
 
-async def test_supported_verdict_is_persisted(db_director):
-    _seed_result({"execution_success": True, "p_value": 0.01}, p_value=0.01, effect_size=0.9)
+async def test_unvalidated_support_is_persisted_as_tested(db_director):
+    """P2-2: the analyst's 'supported' needs a validated result; without a dataset it only counts as tested."""
+    _seed_result(
+        {"execution_success": True, "p_value": 0.01}, p_value=0.01, effect_size=0.9,
+        execution_success=True, data_source="synthetic",
+    )
     db_director._data_analyst = Mock(interpret_results=Mock(return_value=_interpretation(True)))
 
     await db_director._handle_analyze_result_action(RESULT_ID)
 
     supports, interpretation, key_findings, status = _stored()
-    assert supports is True
+    assert supports is None
     assert interpretation == "S"
     assert key_findings == ["k"]
-    assert status == HypothesisStatus.SUPPORTED
-    assert H_ID in db_director.research_plan.supported_hypotheses
+    assert status == HypothesisStatus.INCONCLUSIVE
+    assert H_ID in db_director.research_plan.tested_hypotheses
+    assert H_ID not in db_director.research_plan.supported_hypotheses
+    with get_session() as session:
+        row = session.query(Result).filter_by(id=RESULT_ID).one()
+        assert row.validation_status == "unvalidated"
+        assert row.validation_detail == {"reason": "no_dataset"}
     db_director.workflow.transition_to.assert_called()
     assert db_director.workflow.transition_to.call_args.args[0] == WorkflowState.REFINING
 

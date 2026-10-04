@@ -90,7 +90,8 @@ def scholar_validator():
     return ScholarEvalValidator(
         anthropic_client=None,
         threshold=0.75,
-        min_rigor_score=0.70
+        min_rigor_score=0.70,
+        allow_mock=True
     )
 
 
@@ -232,7 +233,8 @@ class TestValidationThresholds:
         strict_validator = ScholarEvalValidator(
             anthropic_client=None,
             threshold=0.90,  # Stricter threshold
-            min_rigor_score=0.85
+            min_rigor_score=0.85,
+            allow_mock=True
         )
 
         score = strict_validator.evaluate_finding(high_quality_findings[0])

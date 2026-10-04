@@ -138,7 +138,7 @@ async def test_validation_async():
     print("\nTesting validation...")
     from kosmos.validation.scholar_eval import ScholarEvalValidator
 
-    validator = ScholarEvalValidator()
+    validator = ScholarEvalValidator(allow_mock=True)
     finding = {
         "summary": "KRAS mutation correlates with poor outcomes",
         "statistics": {"p_value": 0.001, "sample_size": 500},

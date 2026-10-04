@@ -167,7 +167,8 @@ class NullModelValidator:
         self,
         finding: Dict[str, Any],
         data: Optional[pd.DataFrame] = None,
-        analysis_func: Optional[Callable[[pd.DataFrame], Dict[str, Any]]] = None
+        analysis_func: Optional[Callable[[pd.DataFrame], Dict[str, Any]]] = None,
+        shuffle_func: Optional[Callable[[pd.DataFrame, np.random.Generator], pd.DataFrame]] = None
     ) -> NullModelResult:
         """
         Validate a finding using permutation testing.
@@ -177,6 +178,10 @@ class NullModelValidator:
             data: Original data (if available for full permutation test)
             analysis_func: Function to re-run analysis on permuted data
                           Should return dict with statistic in STATISTIC_KEYS
+            shuffle_func: Optional (data, rng) -> permuted copy, used instead of the
+                          heuristic shuffle methods (for example
+                          kosmos.validation.analysis_fn.shuffle_target); recorded
+                          as shuffle_method 'target'
 
         Returns:
             NullModelResult with permutation p-value and validation outcome
@@ -208,13 +213,13 @@ class NullModelValidator:
         effect_size = self._extract_effect_size(finding)
 
         # Determine shuffle method based on analysis type
-        shuffle_method = self._determine_shuffle_method(finding)
+        shuffle_method = 'target' if shuffle_func is not None else self._determine_shuffle_method(finding)
 
         # Generate null distribution
         if data is not None and analysis_func is not None:
             # Full permutation: shuffle data and re-run analysis
             null_dist, null_effects = self._full_permutation_test(
-                data, analysis_func, shuffle_method
+                data, analysis_func, shuffle_method, shuffle_func
             )
             if len(null_dist) < self.n_permutations * 0.5:
                 warnings.append(
@@ -383,7 +388,8 @@ class NullModelValidator:
         self,
         data: pd.DataFrame,
         analysis_func: Callable[[pd.DataFrame], Dict[str, Any]],
-        shuffle_method: str
+        shuffle_method: str,
+        shuffle_func: Optional[Callable[[pd.DataFrame, np.random.Generator], pd.DataFrame]] = None
     ) -> tuple:
         """
         Run full permutation test by shuffling data and re-running analysis.
@@ -392,6 +398,7 @@ class NullModelValidator:
             data: Original data
             analysis_func: Function to run analysis on data
             shuffle_method: Which shuffle method to use
+            shuffle_func: Optional (data, rng) -> permuted copy; overrides shuffle_method
 
         Returns:
             Tuple of (null_statistics array, null_effect_sizes array or None)
@@ -401,7 +408,9 @@ class NullModelValidator:
 
         for _ in range(self.n_permutations):
             # Shuffle data based on method
-            if shuffle_method == 'column':
+            if shuffle_func is not None:
+                shuffled = shuffle_func(data, self.rng)
+            elif shuffle_method == 'column':
                 shuffled = self.shuffle_columns(data)
             elif shuffle_method == 'row':
                 shuffled = self.shuffle_rows(data)

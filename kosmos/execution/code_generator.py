@@ -188,8 +188,8 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             "    })",
             "    _data_source = 'synthetic'",
             "",
-            "# Clean data",
-            "df = df.dropna()",
+            "# Clean data: keep rows where both analysis columns are present",
+            "df = df.dropna(subset=[_group_col, _measure_col])",
             "",
             "# Check statistical assumptions before t-test",
             "_group_data = {g: df[df[_group_col]==g][_measure_col].values for g in df[_group_col].unique()}",
@@ -219,7 +219,7 @@ class TTestComparisonCodeTemplate(CodeTemplate):
                 "_g2 = np.log2(_g2 + 1)",
             ]
         code_lines += [
-            "_t_stat, _p_val = stats.ttest_ind(_g1, _g2)",
+            "_t_stat, _p_val = stats.ttest_ind(_g1, _g2, equal_var=False)  # Welch",
             "_n1, _n2 = len(_g1), len(_g2)",
             "_pooled_sd = float(np.sqrt(((_n1 - 1) * np.var(_g1, ddof=1) + (_n2 - 1) * np.var(_g2, ddof=1)) / (_n1 + _n2 - 2)))",
             "_mean_diff = float(np.mean(_g1) - np.mean(_g2))",
@@ -233,7 +233,7 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             "else:",
             "    _sig_label = 'ns'",
             "result = {",
-            "    'test': 'independent_t_test',",
+            "    'test': 'welch_t_test',",
             "    't_statistic': float(_t_stat),",
             "    'p_value': float(_p_val),",
             "    'group1': _label1,",
@@ -249,6 +249,16 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             "    'n_group2': int(_n2),",
             f"    'log_transform': {log_transform},",
             "}",
+        ]
+        if not log_transform:
+            # Keys the director recomputes from the data (log2 values are not recomputed)
+            code_lines += [
+                "result['test_type'] = 'welch_t_test'",
+                "result['statistic'] = result['t_statistic']",
+                "result['n'] = int(_n1 + _n2)",
+                "result['columns'] = {'x': _group_col, 'y': _measure_col, 'groups': [_label1, _label2]}",
+            ]
+        code_lines += [
             "",
             "# Print results",
             "print(f\"T-statistic: {result['t_statistic']:.4f}\")",
@@ -341,8 +351,8 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
             "    df = pd.DataFrame({_x_col: _x_syn, _y_col: _y_syn})",
             "    _data_source = 'synthetic'",
             "",
-            "# Clean data",
-            "df = df.dropna()",
+            "# Clean data: keep rows where both analysis columns are present",
+            "df = df.dropna(subset=[_x_col, _y_col])",
             "",
             "# Check statistical assumptions before correlation",
             "for _col in [_x_col, _y_col]:",
@@ -386,6 +396,10 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
             "    'method': _method,",
             "}",
             "result['effect_size'] = result['correlation']",
+            "result['test_type'] = f'{_method}_correlation'",
+            "result['statistic'] = result['correlation']",
+            "result['n'] = int(len(_x))",
+            "result['columns'] = {'x': _x_col, 'y': _y_col}",
             "",
             "# Also compute Spearman rank correlation for nonlinear relationships",
             "from scipy.stats import spearmanr, pearsonr",

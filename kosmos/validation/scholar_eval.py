@@ -104,26 +104,64 @@ class ScholarEvalValidator:
     def __init__(
         self,
         anthropic_client=None,
+        llm_client=None,
         threshold: float = 0.75,
         min_rigor_score: float = 0.70,
         model: str = _DEFAULT_CLAUDE_SONNET_MODEL,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        allow_mock: bool = False,
+        run_null_model: bool = True
     ):
         """
         Initialize ScholarEval validator.
 
         Args:
-            anthropic_client: Anthropic client for LLM scoring
+            anthropic_client: Anthropic SDK client (messages.create) for LLM scoring
+            llm_client: Any kosmos provider client (generate); takes precedence
+                over anthropic_client
             threshold: Minimum overall score for approval (default: 0.75)
             min_rigor_score: Minimum rigor score required (default: 0.70)
-            model: Model to use for scoring
+            model: Model to use for scoring (anthropic_client only)
             temperature: LLM temperature for evaluation
+            allow_mock: When True, a missing client or a failed evaluation returns
+                the optimistic mock score; when False (default) it returns a
+                failing score whose feedback starts with "evaluation_error"
+            run_null_model: Run the parametric null model on the finding's
+                statistics; callers that run a real permutation test pass False
         """
         self.client = anthropic_client
+        self.llm_client = llm_client
         self.threshold = threshold
         self.min_rigor_score = min_rigor_score
         self.model = model
         self._temperature = temperature
+        self.allow_mock = allow_mock
+        self.run_null_model = run_null_model
+
+    def _error_score(self, error: Any) -> ScholarEvalScore:
+        """A failing score that records why the evaluation could not run."""
+        return ScholarEvalScore(
+            novelty=0.0, rigor=0.0, clarity=0.0, reproducibility=0.0,
+            impact=0.0, coherence=0.0, limitations=0.0, ethics=0.0,
+            overall_score=0.0,
+            passes_threshold=False,
+            feedback=f"evaluation_error: {error}",
+        )
+
+    def _query_llm(self, prompt: str) -> str:
+        """Send the scoring prompt to whichever client is configured."""
+        if self.llm_client is not None:
+            response = self.llm_client.generate(
+                prompt, max_tokens=1500, temperature=self._temperature
+            )
+            return response.content if hasattr(response, 'content') else str(response)
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self._temperature
+        )
+        return response.content[0].text
 
     def evaluate_finding(self, finding: Dict) -> ScholarEvalScore:
         """
@@ -135,24 +173,18 @@ class ScholarEvalValidator:
         Returns:
             ScholarEvalScore with 8 dimension scores + overall + approval
         """
-        # If no LLM client, use mock scoring for testing
-        if self.client is None:
-            return self._mock_evaluation(finding)
+        # Without an LLM client only tests and smoke scripts may use mock scoring
+        if self.client is None and self.llm_client is None:
+            if self.allow_mock:
+                return self._mock_evaluation(finding)
+            return self._error_score("no LLM client configured")
 
         # Build evaluation prompt
         prompt = self._build_evaluation_prompt(finding)
 
         try:
-            # Query LLM for scores
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=1500,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self._temperature
-            )
-
-            # Parse LLM response
-            scores = self._parse_llm_response(response.content[0].text)
+            # Query LLM for scores; strict parse so a garbled reply is an error, not 0.5s
+            scores = self._parse_llm_response(self._query_llm(prompt), strict=not self.allow_mock)
 
             # Calculate weighted overall score
             overall = self._calculate_overall_score(scores)
@@ -169,7 +201,7 @@ class ScholarEvalValidator:
             # Issue #70: Run null model validation for statistical grounding
             null_result = None
             statistical_validity = None
-            if finding.get('statistics'):
+            if self.run_null_model and finding.get('statistics'):
                 try:
                     null_validator = NullModelValidator()
                     null_result_obj = null_validator.validate_finding(finding)
@@ -204,8 +236,9 @@ class ScholarEvalValidator:
 
         except Exception as e:
             logger.error(f"ScholarEval evaluation failed: {e}")
-            # Return neutral score on error
-            return self._mock_evaluation(finding)
+            if self.allow_mock:
+                return self._mock_evaluation(finding)
+            return self._error_score(e)
 
     def _build_evaluation_prompt(self, finding: Dict) -> str:
         """
@@ -296,12 +329,14 @@ class ScholarEvalValidator:
 
 Provide scores as JSON object only, no additional text."""
 
-    def _parse_llm_response(self, response_text: str) -> Dict:
+    def _parse_llm_response(self, response_text: str, strict: bool = False) -> Dict:
         """
         Parse LLM response to extract scores.
 
         Args:
             response_text: Raw LLM response
+            strict: Raise JSONParseError instead of returning neutral 0.5 scores
+                when the response holds no JSON object
 
         Returns:
             Dictionary with dimension scores
@@ -329,6 +364,8 @@ Provide scores as JSON object only, no additional text."""
 
         except JSONParseError as e:
             logger.error(f"Failed to parse LLM JSON response: {e}")
+            if strict:
+                raise
 
         # Fallback: return neutral scores
         return {dim: 0.5 for dim in ['novelty', 'rigor', 'clarity',
@@ -455,7 +492,7 @@ Provide scores as JSON object only, no additional text."""
         null_result = None
         statistical_validity = None
         feedback_extra = ""
-        if finding.get('statistics'):
+        if self.run_null_model and finding.get('statistics'):
             try:
                 null_validator = NullModelValidator()
                 null_result_obj = null_validator.validate_finding(finding)

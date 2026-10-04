@@ -20,6 +20,7 @@ import concurrent.futures
 import threading
 import time
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 from kosmos.agents.base import BaseAgent, AgentMessage, MessageType, AgentStatus
 from kosmos.utils.compat import model_to_dict
@@ -1649,7 +1650,8 @@ class ResearchDirectorAgent(BaseAgent):
                     k: v for k, v in return_value.items()
                     if k in ("t_statistic", "p_value", "effect_size",
                              "mean_difference", "significance_label",
-                             "correlation", "r_squared")
+                             "correlation", "r_squared",
+                             "test_type", "statistic", "n", "columns")
                 }
             else:
                 p_value = None
@@ -1800,7 +1802,11 @@ class ResearchDirectorAgent(BaseAgent):
         from kosmos.models.result import ExperimentResult, ResultStatus, ExecutionMetadata
 
         _now = datetime.now(timezone.utc)
-        failed = (db_r.data or {}).get("execution_success") is False
+        # The column decides; rows written before it existed fall back to the data JSON
+        if db_r.execution_success is not None:
+            failed = db_r.execution_success is not True
+        else:
+            failed = (db_r.data or {}).get("execution_success") is False
         return ExperimentResult(
             id=db_r.id,
             experiment_id=db_r.experiment_id,
@@ -1818,8 +1824,85 @@ class ResearchDirectorAgent(BaseAgent):
                 platform=_platform.platform(),
                 experiment_id=db_r.experiment_id,
                 protocol_id=db_r.experiment_id,
+                data_source=db_r.data_source,
+                random_seed=db_r.random_seed,
             ),
         )
+
+    def _validate_result(self, row, interpretation, protocol_name: str):
+        """Gate an analyzed result: recompute its statistic, run a permutation null on
+        the real data, and score it with ScholarEval (advisory unless scholar_eval_gate).
+
+        Returns (validation_status, validation_detail). validation_status is
+        'validated' or 'rejected' when the statistic could be checked against the
+        dataset, otherwise 'unvalidated' with detail['reason'] in execution_failed,
+        no_dataset, synthetic_data, no_statistic.
+        """
+        import math
+        import pandas as pd
+        from kosmos.validation.analysis_fn import SUPPORTED_TESTS, build_analysis_fn, shuffle_target
+        from kosmos.validation.null_model import NullModelValidator
+        from kosmos.validation.scholar_eval import ScholarEvalValidator
+
+        stats = row.statistical_tests or {}
+        if row.execution_success is not True:
+            return "unvalidated", {"reason": "execution_failed"}
+        if not (self.data_path and self.dataset_schema):
+            return "unvalidated", {"reason": "no_dataset"}
+        if row.data_source != "file":
+            return "unvalidated", {"reason": "synthetic_data"}
+        has_stat = (
+            any(k in stats for k in NullModelValidator.STATISTIC_KEYS)
+            and stats.get("p_value") is not None
+        )
+        if not has_stat:
+            return "unvalidated", {"reason": "no_statistic"}
+        test_type = stats.get("test_type")
+        columns = stats.get("columns") if isinstance(stats.get("columns"), dict) else {}
+        if test_type not in SUPPORTED_TESTS or not columns.get("x") or not columns.get("y") \
+                or stats.get("statistic") is None:
+            return "unvalidated", {
+                "reason": "no_statistic",
+                "note": f"statistic not recomputable (test_type={test_type!r}, columns={columns or None})",
+            }
+
+        x_col, y_col, groups = columns["x"], columns["y"], columns.get("groups")
+        fn = build_analysis_fn(test_type, x_col, y_col, groups=groups)
+        detail: Dict[str, Any] = {}
+        try:
+            df = pd.read_csv(self.data_path)
+            recomputed = fn(df)
+        except Exception as e:
+            logger.warning(f"Recomputation of result {row.id} failed: {e}")
+            return "rejected", {"recomputed": None, "recomputed_match": False, "recompute_error": str(e)}
+        recomputed_match = math.isclose(
+            recomputed["statistic"], float(stats["statistic"]), rel_tol=1e-6, abs_tol=1e-12
+        )
+        detail["recomputed"] = recomputed
+        detail["recomputed_match"] = recomputed_match
+
+        seed = row.random_seed if row.random_seed is not None else self.config.get("random_seed")
+        null = NullModelValidator(
+            n_permutations=self.config.get("null_permutations", 500), random_seed=seed
+        ).validate_finding(
+            {"statistics": stats}, data=df, analysis_func=fn,
+            shuffle_func=lambda d, rng: shuffle_target(d, test_type, x_col, y_col, rng),
+        )
+        detail["null_model"] = null.to_dict()
+
+        n = stats.get("n", recomputed.get("n"))
+        scholar = ScholarEvalValidator(llm_client=self.llm_client, run_null_model=False).evaluate_finding({
+            "summary": interpretation.summary,
+            "statistics": stats,
+            "methods": f"{protocol_name}; {test_type} on {columns}; n={n}",
+            "interpretation": interpretation.significance_interpretation,
+        })
+        detail["scholar_eval"] = scholar.to_dict()
+
+        validated = recomputed_match and null.passes_null_test and not null.persists_in_noise
+        if self.config.get("scholar_eval_gate", False):
+            validated = validated and scholar.passes_threshold
+        return ("validated" if validated else "rejected"), detail
 
     async def _handle_analyze_result_action(self, result_id: str):
         """
@@ -1852,11 +1935,22 @@ class ResearchDirectorAgent(BaseAgent):
 
                 # Get hypothesis_id through experiment
                 experiment = db_result.experiment
+                protocol_name = ""
                 if experiment:
                     hypothesis_id = experiment.hypothesis_id
+                    protocol_name = (experiment.protocol or {}).get("name") or experiment.description or ""
 
                 # Build minimal ExperimentResult from DB fields
                 pydantic_result = self._db_result_to_experiment_result(db_result)
+
+                # Plain copy of the fields the validation gate reads after the session closes
+                row = SimpleNamespace(
+                    id=db_result.id,
+                    execution_success=db_result.execution_success,
+                    data_source=db_result.data_source,
+                    statistical_tests=dict(db_result.statistical_tests or {}),
+                    random_seed=db_result.random_seed,
+                )
 
                 # Load hypothesis if available
                 if hypothesis_id:
@@ -1873,18 +1967,32 @@ class ResearchDirectorAgent(BaseAgent):
             # A failed execution has nothing to interpret; record it without an LLM call
             if pydantic_result.status == ResultStatus.FAILED:
                 _d = pydantic_result.raw_data
-                hypothesis_supported, confidence = None, 0.0
+                supported, confidence = None, 0.0
                 summary = f"Execution failed: {_d.get('error_type')}: {_d.get('error')}"
                 key_findings = []
+                validation_status, validation_detail = "unvalidated", {"reason": "execution_failed"}
             else:
                 interpretation = self._data_analyst.interpret_results(
                     result=pydantic_result,
                     hypothesis=pydantic_hyp,
                 )
-                hypothesis_supported = interpretation.hypothesis_supported
+                supported = interpretation.hypothesis_supported
                 confidence = interpretation.confidence if interpretation.confidence else 0.8
                 summary = interpretation.summary
                 key_findings = list(interpretation.key_findings or [])
+                validation_status, validation_detail = self._validate_result(
+                    row, interpretation, protocol_name
+                )
+
+            # Verdict rule: support needs a validated statistic; rejection needs a real
+            # analysis of the dataset; everything else only counts as tested
+            from_real_data = row.execution_success is True and row.data_source == "file"
+            if supported is True and validation_status == "validated":
+                hypothesis_supported = True
+            elif supported is False and validation_status in ("validated", "rejected") and from_real_data:
+                hypothesis_supported = False
+            else:
+                hypothesis_supported = None
 
             # Track rollout (Issue #58)
             self.rollout_tracker.increment("data_analysis")
@@ -1892,8 +2000,10 @@ class ResearchDirectorAgent(BaseAgent):
             p_value = pydantic_result.primary_p_value
             effect_size = pydantic_result.primary_effect_size
 
-            # Persist the verdict on the result row and the hypothesis status
-            from kosmos.db.operations import update_result_analysis, update_hypothesis_status
+            # Persist the verdict, the validation outcome and the hypothesis status
+            from kosmos.db.operations import (
+                update_result_analysis, update_result_validation, update_hypothesis_status,
+            )
             from kosmos.db.models import HypothesisStatus as DBHypothesisStatus
             with get_session() as session:
                 update_result_analysis(
@@ -1901,6 +2011,11 @@ class ResearchDirectorAgent(BaseAgent):
                     supports_hypothesis=hypothesis_supported,
                     interpretation=summary,
                     key_findings=key_findings,
+                )
+                update_result_validation(
+                    session, result_id, validation_status,
+                    detail=validation_detail,
+                    supports_hypothesis=hypothesis_supported,
                 )
                 if hypothesis_id:
                     update_hypothesis_status(
@@ -1911,8 +2026,9 @@ class ResearchDirectorAgent(BaseAgent):
                     )
 
             logger.info(
-                f"Result {result_id} interpretation: "
-                f"hypothesis {hypothesis_id} supported={hypothesis_supported}"
+                f"Result {result_id}: analyst supported={supported}, "
+                f"validation={validation_status} {validation_detail.get('reason', '')}; "
+                f"hypothesis {hypothesis_id} verdict={hypothesis_supported}"
             )
 
             # Reset error streak on success

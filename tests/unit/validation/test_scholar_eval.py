@@ -53,7 +53,7 @@ def low_quality_finding():
 @pytest.fixture
 def scholar_validator():
     """Create ScholarEvalValidator without LLM client."""
-    return ScholarEvalValidator(anthropic_client=None)
+    return ScholarEvalValidator(anthropic_client=None, allow_mock=True)
 
 
 @pytest.fixture
@@ -244,7 +244,7 @@ class TestLLMEvaluation:
         mock_client = Mock()
         mock_client.messages.create = AsyncMock(return_value=mock_llm_response)
 
-        validator = ScholarEvalValidator(anthropic_client=mock_client)
+        validator = ScholarEvalValidator(anthropic_client=mock_client, allow_mock=True)
 
         score = validator.evaluate_finding(high_quality_finding)
 
@@ -257,7 +257,7 @@ class TestLLMEvaluation:
         mock_client = Mock()
         mock_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
 
-        validator = ScholarEvalValidator(anthropic_client=mock_client)
+        validator = ScholarEvalValidator(anthropic_client=mock_client, allow_mock=True)
 
         score = validator.evaluate_finding(high_quality_finding)
 
@@ -573,7 +573,7 @@ class TestScholarEvalEdgeCases:
     @pytest.mark.asyncio
     async def test_threshold_boundary(self):
         """Test evaluation at threshold boundary."""
-        validator = ScholarEvalValidator(threshold=0.75, min_rigor_score=0.70)
+        validator = ScholarEvalValidator(threshold=0.75, min_rigor_score=0.70, allow_mock=True)
 
         finding = {
             'summary': 'Borderline finding',

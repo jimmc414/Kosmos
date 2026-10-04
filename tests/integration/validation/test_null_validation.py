@@ -128,7 +128,7 @@ class TestScholarEvalIntegration:
             'interpretation': 'Treatment significantly affects gene expression'
         }
 
-        validator = ScholarEvalValidator()  # No LLM client, uses mock
+        validator = ScholarEvalValidator(allow_mock=True)  # No LLM client, uses mock
         score = validator.evaluate_finding(finding)
 
         # Should include null model result
@@ -148,7 +148,7 @@ class TestScholarEvalIntegration:
             }
         }
 
-        validator = ScholarEvalValidator()
+        validator = ScholarEvalValidator(allow_mock=True)
         score = validator.evaluate_finding(finding)
 
         # Should have statistical_validity
@@ -179,7 +179,7 @@ class TestScholarEvalIntegration:
             }
         }
 
-        validator = ScholarEvalValidator()
+        validator = ScholarEvalValidator(allow_mock=True)
         weak_score = validator.evaluate_finding(weak_finding)
         strong_score = validator.evaluate_finding(strong_finding)
 

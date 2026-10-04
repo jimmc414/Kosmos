@@ -34,7 +34,7 @@ def failure_detector():
 @pytest.fixture
 def scholar_validator():
     """Create ScholarEvalValidator without LLM client."""
-    return ScholarEvalValidator(anthropic_client=None)
+    return ScholarEvalValidator(anthropic_client=None, allow_mock=True)
 
 
 @pytest.fixture
