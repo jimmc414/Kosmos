@@ -19,6 +19,7 @@ from typing import Dict, Optional, Any
 from dataclasses import dataclass, asdict
 
 from kosmos.config import _DEFAULT_CLAUDE_SONNET_MODEL
+from kosmos.core.utils.json_parser import parse_json_response, JSONParseError
 from kosmos.validation.null_model import NullModelValidator, NullModelResult
 
 logger = logging.getLogger(__name__)
@@ -307,31 +308,26 @@ Provide scores as JSON object only, no additional text."""
         """
         # Try to extract JSON from response
         try:
-            # Look for JSON block
-            start_idx = response_text.find('{')
-            end_idx = response_text.rfind('}') + 1
+            # Tolerant parse: fences, preamble, trailing commas
+            scores = parse_json_response(response_text)
 
-            if start_idx != -1 and end_idx > start_idx:
-                json_str = response_text[start_idx:end_idx]
-                scores = json.loads(json_str)
+            # Validate all required dimensions present
+            required_dims = [
+                'novelty', 'rigor', 'clarity', 'reproducibility',
+                'impact', 'coherence', 'limitations', 'ethics'
+            ]
 
-                # Validate all required dimensions present
-                required_dims = [
-                    'novelty', 'rigor', 'clarity', 'reproducibility',
-                    'impact', 'coherence', 'limitations', 'ethics'
-                ]
+            for dim in required_dims:
+                if dim not in scores:
+                    logger.warning(f"Missing dimension {dim}, using default 0.5")
+                    scores[dim] = 0.5
 
-                for dim in required_dims:
-                    if dim not in scores:
-                        logger.warning(f"Missing dimension {dim}, using default 0.5")
-                        scores[dim] = 0.5
+                # Clamp to [0, 1]
+                scores[dim] = max(0.0, min(1.0, float(scores[dim])))
 
-                    # Clamp to [0, 1]
-                    scores[dim] = max(0.0, min(1.0, float(scores[dim])))
+            return scores
 
-                return scores
-
-        except json.JSONDecodeError as e:
+        except JSONParseError as e:
             logger.error(f"Failed to parse LLM JSON response: {e}")
 
         # Fallback: return neutral scores

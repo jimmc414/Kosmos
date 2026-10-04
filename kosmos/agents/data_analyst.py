@@ -6,13 +6,13 @@ identifying anomalies, and generating scientific insights.
 """
 
 import logging
-import json
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 import numpy as np
 
 from kosmos.agents.base import BaseAgent, AgentMessage, MessageType, AgentStatus
 from kosmos.core.llm import get_client
+from kosmos.core.utils.json_parser import parse_json_response, JSONParseError
 from kosmos.models.result import ExperimentResult, ResultStatus, StatisticalTestResult
 from kosmos.models.hypothesis import Hypothesis
 
@@ -514,11 +514,7 @@ Format your response as JSON with the following structure:
         """Parse Claude's JSON response into ResultInterpretation."""
         try:
             # Extract JSON from response (Claude sometimes adds text before/after)
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            json_str = response[json_start:json_end]
-
-            data = json.loads(json_str)
+            data = parse_json_response(str(response))
 
             # Detect anomalies and patterns
             anomalies = self.detect_anomalies(result) if self.anomaly_detection_enabled else []
@@ -540,7 +536,7 @@ Format your response as JSON with the following structure:
                 overall_assessment=data.get("overall_assessment", "")
             )
 
-        except json.JSONDecodeError as e:
+        except JSONParseError as e:
             logger.error(f"Failed to parse JSON from Claude response: {e}")
             logger.debug(f"Response was: {response}")
             return self._create_fallback_interpretation(result)

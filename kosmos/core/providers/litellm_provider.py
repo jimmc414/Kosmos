@@ -29,12 +29,29 @@ from kosmos.core.providers.base import (
     LLMResponse,
     ProviderAPIError
 )
+from kosmos.core.utils.json_parser import parse_json_response, JSONParseError
 
 logger = logging.getLogger(__name__)
 
 
 from kosmos.config import _DEFAULT_CLAUDE_SONNET_MODEL, _DEFAULT_CLAUDE_HAIKU_MODEL
 from kosmos.core.pricing import MODEL_PRICING, get_model_cost
+
+
+def _is_json_mode_rejection(error: Exception) -> bool:
+    """True when an error (or the error it wraps) says JSON mode is unsupported."""
+    candidates = [error]
+    raw_error = getattr(error, 'raw_error', None)
+    if raw_error is not None:
+        candidates.append(raw_error)
+    for candidate in candidates:
+        message = str(candidate)
+        if 'response_format' in message or 'json_object' in message:
+            return True
+        name = type(candidate).__name__
+        if name.startswith('BadRequest') or name.startswith('UnsupportedParams'):
+            return True
+    return False
 
 
 class LiteLLMProvider(LLMProvider):
@@ -118,6 +135,9 @@ class LiteLLMProvider(LLMProvider):
 
         # Determine provider type from model name
         self._detect_provider_type()
+
+        # JSON mode (response_format) is assumed until the backend rejects it
+        self._supports_json_mode = True
 
         logger.info(
             f"LiteLLM provider initialized: model={self.model}, "
@@ -436,36 +456,82 @@ class LiteLLMProvider(LLMProvider):
 IMPORTANT: Respond ONLY with valid JSON. No explanations, no markdown code blocks, just pure JSON.
 The response must match this schema: """ + json.dumps(schema, indent=2)
 
-        response = self.generate(
+        json_system = json_system.strip()
+        response = self._generate_json(
             prompt=prompt,
-            system=json_system.strip(),
+            system=json_system,
             max_tokens=max_tokens,
             temperature=temperature if temperature is not None else 0.3,  # Lower temp for structured output
             **kwargs
         )
-
-        # Clean and parse JSON
-        content = response.content.strip()
-
-        # Remove markdown code blocks if present
-        if content.startswith("```json"):
-            content = content[7:]
-        elif content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
+        content = response.content
 
         try:
-            return json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {content[:200]}...")
-            raise ProviderAPIError(
-                "litellm",
-                f"Invalid JSON response: {e}",
-                raw_error=e,
-                recoverable=False
+            result = parse_json_response(content, schema=schema)
+        except JSONParseError:
+            logger.warning(
+                "LiteLLM structured output was not valid JSON; asking %s for a repair",
+                self.model
             )
+            repair = self._generate_json(
+                prompt=(
+                    "Return ONLY the JSON object. Your previous reply was not valid JSON:"
+                    f"\n\n{content[:4000]}"
+                ),
+                system=json_system,
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+            content = repair.content
+            try:
+                result = parse_json_response(content, schema=schema)
+            except JSONParseError as e:
+                logger.error(f"Failed to parse JSON response after repair: {content[:200]}...")
+                raise ProviderAPIError(
+                    "litellm",
+                    f"Invalid JSON response after one repair attempt: {content[:300]}",
+                    raw_error=e,
+                    recoverable=True
+                )
+
+        required = schema.get('required') if isinstance(schema, dict) else None
+        if isinstance(required, list):
+            missing = [key for key in required if key not in result]
+            if missing:
+                logger.warning(
+                    "LiteLLM structured output is missing required keys: %s",
+                    ", ".join(str(key) for key in missing)
+                )
+
+        return result
+
+    def _generate_json(self, **kwargs) -> LLMResponse:
+        """
+        Call generate() with JSON mode when the backend accepts it.
+
+        Sends response_format={'type': 'json_object'} unless the caller set
+        one. If the backend rejects it, retries once without it and remembers
+        that for the rest of this provider instance.
+        """
+        if not self._supports_json_mode:
+            return self.generate(**kwargs)
+
+        kwargs_json = dict(kwargs)
+        kwargs_json.setdefault('response_format', {'type': 'json_object'})
+        try:
+            return self.generate(**kwargs_json)
+        except Exception as e:
+            if not _is_json_mode_rejection(e):
+                raise
+            self._supports_json_mode = False
+            logger.info(
+                "LiteLLM backend for %s rejected JSON mode (%s); "
+                "continuing without response_format",
+                self.model,
+                e
+            )
+            kwargs.pop('response_format', None)
+            return self.generate(**kwargs)
 
     def generate_stream(
         self,

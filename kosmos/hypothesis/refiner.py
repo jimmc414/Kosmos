@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from kosmos.models.hypothesis import Hypothesis, HypothesisStatus
 from kosmos.models.result import ExperimentResult, ResultStatus
 from kosmos.core.llm import get_client
+from kosmos.core.utils.json_parser import parse_json_array_response, JSONParseError
 from kosmos.knowledge.vector_db import PaperVectorDB as VectorDB, HAS_CHROMADB
 
 logger = logging.getLogger(__name__)
@@ -454,12 +455,11 @@ Respond with JSON array:
             response = self.llm_client.generate(prompt, max_tokens=1000)
 
             # Parse JSON
-            json_start = response.find('[')
-            json_end = response.rfind(']') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                variants_data = json.loads(json_str)
-
+            try:
+                variants_data = parse_json_array_response(str(response))
+            except JSONParseError:
+                variants_data = None
+            if variants_data is not None:
                 variants = []
                 for i, variant_data in enumerate(variants_data[:num_variants]):
                     variant = Hypothesis(

@@ -13,7 +13,7 @@ may produce, including:
 import json
 import re
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +28,18 @@ class JSONParseError(Exception):
         super().__init__(f"{message} (tried {attempts} strategies)")
 
 
+# First-opening to last-closing spans used by the regex extraction strategies
+_OBJECT_PATTERN = r'\{[\s\S]*\}'
+_ARRAY_PATTERN = r'\[[\s\S]*\]'
+
+
 def parse_json_response(
     response_text: str,
     schema: Optional[Dict[str, Any]] = None,
     strict: bool = False
 ) -> Dict[str, Any]:
     """
-    Parse JSON from model response with multiple fallback strategies.
+    Parse a JSON object from model response with multiple fallback strategies.
 
     Strategies tried in order:
     1. Direct JSON parse
@@ -43,6 +48,9 @@ def parse_json_response(
     3. Extract from ``` code blocks
     4. Extract JSON object using regex
     5. Clean common issues (trailing commas, single quotes)
+
+    A strategy only succeeds when it yields an object (dict); a top-level
+    array is treated as a failed strategy.
 
     Args:
         response_text: Raw response text from the model
@@ -55,16 +63,58 @@ def parse_json_response(
     Raises:
         JSONParseError: If all parsing strategies fail
     """
-    if not response_text or not response_text.strip():
-        raise JSONParseError("Empty response", response_text or "", 0)
+    return _parse_with_strategies(response_text, _OBJECT_PATTERN, dict, strict)
 
+
+def parse_json_array_response(
+    response_text: str,
+    strict: bool = False
+) -> List[Any]:
+    """
+    Parse a JSON array from model response with the same fallback strategies
+    as parse_json_response, extracting the first [...] span instead of {...}.
+
+    Args:
+        response_text: Raw response text from the model
+        strict: If True, only try direct parse (no fallbacks)
+
+    Returns:
+        List[Any]: Parsed JSON array
+
+    Raises:
+        JSONParseError: If all parsing strategies fail
+    """
+    return _parse_with_strategies(response_text, _ARRAY_PATTERN, list, strict)
+
+
+def _parse_with_strategies(
+    response_text: str,
+    pattern: str,
+    expected_type: type,
+    strict: bool
+) -> Any:
+    """Run the parse strategies, accepting only results of expected_type."""
+    if not response_text or not str(response_text).strip():
+        raise JSONParseError("Empty response", str(response_text or ""), 0)
+
+    response_text = str(response_text)
     text = response_text.strip()
     attempts = 0
+
+    def _loads(candidate: str) -> Any:
+        value = json.loads(candidate)
+        if not isinstance(value, expected_type):
+            raise json.JSONDecodeError(
+                f"Expected {expected_type.__name__}, got {type(value).__name__}",
+                candidate,
+                0
+            )
+        return value
 
     # Strategy 1: Direct parse
     attempts += 1
     try:
-        return json.loads(text)
+        return _loads(text)
     except json.JSONDecodeError:
         if strict:
             raise JSONParseError(
@@ -78,7 +128,7 @@ def parse_json_response(
     json_block_match = re.search(r'```json\s*([\s\S]*?)\s*```', text)
     if json_block_match:
         try:
-            return json.loads(json_block_match.group(1).strip())
+            return _loads(json_block_match.group(1).strip())
         except json.JSONDecodeError:
             pass
 
@@ -86,12 +136,12 @@ def parse_json_response(
     attempts += 1
     unclosed_json_match = re.search(r'```json\s*([\s\S]+)', text)
     if unclosed_json_match and not json_block_match:
-        # Try to find complete JSON object within the unclosed block
+        # Try to find complete JSON value within the unclosed block
         block_content = unclosed_json_match.group(1).strip()
-        json_obj_in_block = re.search(r'(\{[\s\S]*\})', block_content)
-        if json_obj_in_block:
+        json_in_block = re.search(pattern, block_content)
+        if json_in_block:
             try:
-                return json.loads(json_obj_in_block.group(1))
+                return _loads(json_in_block.group(0))
             except json.JSONDecodeError:
                 pass
 
@@ -103,16 +153,16 @@ def parse_json_response(
         # Skip if it looks like code (has common code markers)
         if not any(marker in block_content for marker in ['def ', 'class ', 'import ', 'function ']):
             try:
-                return json.loads(block_content)
+                return _loads(block_content)
             except json.JSONDecodeError:
                 pass
 
-    # Strategy 4: Extract JSON object using regex (find first {...})
+    # Strategy 4: Extract JSON value using regex (first opening to last closing)
     attempts += 1
-    json_obj_match = re.search(r'\{[\s\S]*\}', text)
+    json_obj_match = re.search(pattern, text)
     if json_obj_match:
         try:
-            return json.loads(json_obj_match.group(0))
+            return _loads(json_obj_match.group(0))
         except json.JSONDecodeError:
             # Try with cleaning
             pass
@@ -121,16 +171,16 @@ def parse_json_response(
     attempts += 1
     cleaned = _clean_json_string(text)
     try:
-        return json.loads(cleaned)
+        return _loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # Strategy 5b: Try cleaning extracted JSON object
+    # Strategy 5b: Try cleaning extracted JSON value
     if json_obj_match:
         attempts += 1
         cleaned_obj = _clean_json_string(json_obj_match.group(0))
         try:
-            return json.loads(cleaned_obj)
+            return _loads(cleaned_obj)
         except json.JSONDecodeError:
             pass
 
@@ -139,7 +189,7 @@ def parse_json_response(
         attempts += 1
         cleaned_block = _clean_json_string(json_block_match.group(1).strip())
         try:
-            return json.loads(cleaned_block)
+            return _loads(cleaned_block)
         except json.JSONDecodeError:
             pass
 
