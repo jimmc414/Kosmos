@@ -255,7 +255,8 @@ Output Format (JSON):
       "type": "independent",
       "description": "Clear variable description",
       "values": [value1, value2, value3],
-      "unit": "unit_name"
+      "unit": "unit_name",
+      "column": "exact_dataset_column_name (required when a dataset is provided)"
     }
   },
   "control_groups": [
@@ -446,7 +447,7 @@ Hypothesis Rationale: ${hypothesis_rationale}
 Domain: ${domain}
 
 Experiment Type: ${experiment_type}
-
+${dataset_context}
 Resource Constraints:
 - Max Cost: ${max_cost_usd} USD
 - Max Duration: ${max_duration_days} days
@@ -491,7 +492,7 @@ Constraints:
 - Use appropriate statistical methods for the hypothesis type
 
 Output the experiment protocol as a JSON object with the exact structure specified in the system prompt.""",
-    variables=["hypothesis_statement", "hypothesis_rationale", "domain", "experiment_type", "research_question", "max_cost_usd", "max_duration_days"],
+    variables=["hypothesis_statement", "hypothesis_rationale", "domain", "experiment_type", "research_question", "max_cost_usd", "max_duration_days", "dataset_context"],
     description="Design detailed experimental protocols from hypotheses with full specifications"
 )
 

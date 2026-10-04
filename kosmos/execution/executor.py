@@ -514,7 +514,10 @@ class CodeExecutor:
 
         # Prepare execution environment
         exec_globals = self._prepare_globals()
-        exec_locals = local_vars.copy() if local_vars else {}
+        # One namespace, as in a module: with separate locals, comprehensions and
+        # functions in the generated code cannot see its top-level names
+        exec_globals.update(local_vars or {})
+        exec_locals = exec_globals
 
         # Capture stdout and stderr
         stdout_capture = io.StringIO()

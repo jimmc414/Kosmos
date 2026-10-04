@@ -69,6 +69,8 @@ class ResearchPlan(BaseModel):
     tested_hypotheses: List[str] = Field(default_factory=list)
     supported_hypotheses: List[str] = Field(default_factory=list)
     rejected_hypotheses: List[str] = Field(default_factory=list)
+    # Hypotheses whose variables bind to no dataset column; never designed again
+    untestable_hypotheses: List[str] = Field(default_factory=list)
 
     # Experiment tracking
     experiment_queue: List[str] = Field(default_factory=list)  # Protocol IDs
@@ -121,6 +123,12 @@ class ResearchPlan(BaseModel):
             self.rejected_hypotheses.append(hypothesis_id)
             self.mark_tested(hypothesis_id)
 
+    def mark_untestable(self, hypothesis_id: str):
+        """Exclude a hypothesis that cannot be tested on the supplied dataset."""
+        if hypothesis_id not in self.untestable_hypotheses:
+            self.untestable_hypotheses.append(hypothesis_id)
+            self.update_timestamp()
+
     def add_experiment(self, protocol_id: str):
         """Add experiment to queue."""
         if protocol_id not in self.experiment_queue:
@@ -147,8 +155,11 @@ class ResearchPlan(BaseModel):
         self.update_timestamp()
 
     def get_untested_hypotheses(self) -> List[str]:
-        """Get list of hypotheses that haven't been tested."""
-        return [h for h in self.hypothesis_pool if h not in self.tested_hypotheses]
+        """Get list of hypotheses that haven't been tested and can be tested."""
+        return [
+            h for h in self.hypothesis_pool
+            if h not in self.tested_hypotheses and h not in self.untestable_hypotheses
+        ]
 
     def get_testability_rate(self) -> float:
         """Calculate ratio of tested to total hypotheses."""

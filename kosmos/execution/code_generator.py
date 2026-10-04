@@ -10,16 +10,63 @@ Based on patterns from docs/integration-plan.md.
 """
 
 import ast
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Any, Callable, Tuple, TYPE_CHECKING
 import logging
 from pathlib import Path
 
-from kosmos.models.experiment import ExperimentProtocol, ProtocolStep, ExperimentType
+from kosmos.models.experiment import ExperimentProtocol, ProtocolStep, ExperimentType, Variable
 from kosmos.models.hypothesis import Hypothesis
 from kosmos.core.llm import ClaudeClient
 from kosmos.core.prompts import EXPERIMENT_DESIGNER
 
+if TYPE_CHECKING:
+    from kosmos.execution.data_schema import DatasetSchema
+
 logger = logging.getLogger(__name__)
+
+
+# Generated lines that define data_path as None when the executor did not set it.
+# The host executor's restricted builtins have no dir(), so no "in dir()" test.
+_DATA_PATH_GUARD = [
+    "try:",
+    "    data_path",
+    "except NameError:",
+    "    data_path = None",
+]
+
+
+def _variable_column(var: Variable) -> str:
+    """The dataset column a variable reads: its bound column, else its name."""
+    return var.column or var.name
+
+
+def _xy_variables(protocol: ExperimentProtocol) -> Tuple[Optional[Variable], Optional[Variable]]:
+    """The first independent (x) and first dependent (y) variable.
+
+    Falls back to declaration order when a role is missing, so protocols that
+    only list two variables keep working.
+    """
+    variables = list(protocol.variables.values())
+    indep = protocol.get_independent_variables()
+    dep = protocol.get_dependent_variables()
+    x = indep[0] if indep else (variables[0] if variables else None)
+    y = dep[0] if dep else next((v for v in variables if v is not x), None)
+    return x, y
+
+
+def _xy_columns(protocol: ExperimentProtocol) -> Tuple[str, str]:
+    x, y = _xy_variables(protocol)
+    return (_variable_column(x) if x else 'x'), (_variable_column(y) if y else 'y')
+
+
+def _missing_columns_check(columns_expr: str) -> List[str]:
+    """Generated lines that fail loudly when the loaded file lacks a required column."""
+    return [
+        "if df is not None:",
+        f"    _missing = [c for c in {columns_expr} if c not in df.columns]",
+        "    if _missing:",
+        "        raise KeyError(f'Dataset is missing required columns: {_missing}; available: {list(df.columns)}')",
+    ]
 
 
 class CodeTemplate:
@@ -40,7 +87,7 @@ class CodeTemplate:
         """Check if this template matches the protocol."""
         return protocol.experiment_type == self.experiment_type
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
         """Generate code from protocol."""
         raise NotImplementedError
 
@@ -68,14 +115,14 @@ class TTestComparisonCodeTemplate(CodeTemplate):
 
         return False
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
         """Generate t-test comparison code."""
         # Extract variable information
         indep_vars = [v for v in protocol.variables.values() if v.type.value == 'independent']
         dep_vars = [v for v in protocol.variables.values() if v.type.value == 'dependent']
 
-        group_var = indep_vars[0].name if indep_vars else 'group'
-        measure_var = dep_vars[0].name if dep_vars else 'measurement'
+        group_var = _variable_column(indep_vars[0]) if indep_vars else 'group'
+        measure_var = _variable_column(dep_vars[0]) if dep_vars else 'measurement'
 
         # Get groups from control groups
         groups = []
@@ -84,6 +131,11 @@ class TTestComparisonCodeTemplate(CodeTemplate):
         else:
             groups.append('control')  # Default control group
         groups.append('experimental')  # Default experimental group
+
+        # A bound two-level column supplies the real group labels
+        levels = (dataset_schema.categorical_columns.get(group_var) if dataset_schema else None) or []
+        if len(levels) == 2 and not set(groups) <= set(levels):
+            groups = [levels[0], levels[1]]
 
         # Get random seed from protocol or use default
         seed = getattr(protocol, 'random_seed', 42) or 42
@@ -115,13 +167,15 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             "# Data loading with synthetic fallback (Issue #51 fix)",
             "# Expected format: CSV with columns _group_col and _measure_col",
             "df = None",
-            "if 'data_path' in dir() and data_path:",
+            *_DATA_PATH_GUARD,
+            "if data_path:",
             "    try:",
             "        df = pd.read_csv(data_path)",
             "        _data_source = 'file'",
             "    except Exception as e:",
             "        print(f'Warning: Could not load data: {e}')",
             "        df = None",
+            *_missing_columns_check("[_group_col, _measure_col]"),
             "if df is None:",
             f"    # Generate synthetic data for computational experiment",
             f"    np.random.seed({seed})",
@@ -203,8 +257,7 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             "print(f\"Mean difference: {result['mean_difference']:.4f}\")",
             "",
             "# Propagate data source and assumption checks into results",
-            "if '_data_source' in dir():",
-            "    result['data_source'] = _data_source",
+            "result['data_source'] = _data_source",
             "result['assumption_checks'] = {",
             "    'normality_tested': True,",
             "    'sample_size_adequate': len(df) >= 30,",
@@ -240,12 +293,10 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
 
         return 'correlation' in protocol.name.lower()
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
         """Generate correlation analysis code."""
-        # Get variables
-        vars_list = list(protocol.variables.keys())
-        x_var = vars_list[0] if len(vars_list) > 0 else 'x'
-        y_var = vars_list[1] if len(vars_list) > 1 else 'y'
+        # Independent variable on x, dependent on y
+        x_var, y_var = _xy_columns(protocol)
 
         # Determine correlation method
         method = 'pearson'
@@ -272,13 +323,15 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
             "# Data loading with synthetic fallback",
             "# Expected format: CSV with columns _x_col and _y_col",
             "df = None",
-            "if 'data_path' in dir() and data_path:",
+            *_DATA_PATH_GUARD,
+            "if data_path:",
             "    try:",
             "        df = pd.read_csv(data_path)",
             "        _data_source = 'file'",
             "    except Exception as e:",
             "        print(f'Warning: Could not load data: {e}')",
             "        df = None",
+            *_missing_columns_check("[_x_col, _y_col]"),
             "if df is None:",
             f"    # Generate synthetic correlated data",
             f"    np.random.seed({seed})",
@@ -367,8 +420,7 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
             "print(f\"Regression equation: {result['equation']}\")",
             "",
             "# Propagate data source and assumption checks into results",
-            "if '_data_source' in dir():",
-            "    result['data_source'] = _data_source",
+            "result['data_source'] = _data_source",
             "result['assumption_checks'] = {",
             "    'normality_tested': True,",
             "    'sample_size_adequate': len(df) >= 30,",
@@ -400,11 +452,9 @@ class LogLogScalingCodeTemplate(CodeTemplate):
 
         return any(keyword in text for keyword in keywords)
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
         """Generate log-log scaling analysis code."""
-        vars_list = list(protocol.variables.keys())
-        x_var = vars_list[0] if len(vars_list) > 0 else 'x'
-        y_var = vars_list[1] if len(vars_list) > 1 else 'y'
+        x_var, y_var = _xy_columns(protocol)
 
         seed = getattr(protocol, 'random_seed', 42) or 42
 
@@ -423,13 +473,15 @@ class LogLogScalingCodeTemplate(CodeTemplate):
             "# Data loading with synthetic fallback",
             "# Expected format: CSV with columns _x_col and _y_col",
             "df = None",
-            "if 'data_path' in dir() and data_path:",
+            *_DATA_PATH_GUARD,
+            "if data_path:",
             "    try:",
             "        df = pd.read_csv(data_path)",
             "        _data_source = 'file'",
             "    except Exception as e:",
             "        print(f'Warning: Could not load data: {e}')",
             "        df = None",
+            *_missing_columns_check("[_x_col, _y_col]"),
             "if df is None:",
             f"    # Generate synthetic power-law data",
             f"    np.random.seed({seed})",
@@ -472,8 +524,7 @@ class LogLogScalingCodeTemplate(CodeTemplate):
             "print(f\"R-squared: {result['r_squared']:.4f}\")",
             "",
             "# Propagate data source and assumption checks into results",
-            "if '_data_source' in dir():",
-            "    result['data_source'] = _data_source",
+            "result['data_source'] = _data_source",
             "result['assumption_checks'] = {",
             "    'normality_tested': False,",
             "    'sample_size_adequate': len(df) >= 30,",
@@ -502,8 +553,15 @@ class MLExperimentCodeTemplate(CodeTemplate):
 
         return any(keyword in text for keyword in keywords)
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
         """Generate ML experiment code."""
+        # Only explicit bindings pick columns: ML variable names ("features")
+        # rarely name a column, so unbound protocols keep the last-column target
+        target_cols = [v.column for v in protocol.get_dependent_variables() if v.column]
+        target_col = target_cols[0] if target_cols else None
+        feature_cols = [v.column for v in protocol.get_independent_variables()
+                        if v.column and v.column != target_col]
+
         code_lines = [
             "# Machine Learning Experiment",
             "# Generated from protocol template",
@@ -520,13 +578,18 @@ class MLExperimentCodeTemplate(CodeTemplate):
             "",
             "# Data loading with synthetic fallback",
             "df = None",
-            "if 'data_path' in dir() and data_path:",
+            *_DATA_PATH_GUARD,
+            "if data_path:",
             "    try:",
             "        df = pd.read_csv(data_path)",
             "        _data_source = 'file'",
             "    except Exception as e:",
             "        print(f'Warning: Could not load data: {e}')",
             "        df = None",
+            f"_target_col = {target_col!r}",
+            f"_feature_cols = {feature_cols!r}",
+            "if _target_col is not None:",
+            *["    " + line for line in _missing_columns_check("[_target_col] + _feature_cols")],
             "if df is None:",
             "    # Generate synthetic classification data",
             "    X_syn, y_syn = make_classification(n_samples=200, n_features=10, random_state=42)",
@@ -534,10 +597,13 @@ class MLExperimentCodeTemplate(CodeTemplate):
             "    df['target'] = y_syn",
             "    _data_source = 'synthetic'",
             "",
-            "# Prepare features and target",
-            "# Assuming last column is target",
-            "X = df.iloc[:, :-1]",
-            "y = df.iloc[:, -1]",
+            "# Prepare features and target: bound columns, else the last column is the target",
+            "if _target_col is not None and _data_source == 'file':",
+            "    y = df[_target_col]",
+            "    X = df[_feature_cols] if _feature_cols else df.drop(columns=[_target_col])",
+            "else:",
+            "    X = df.iloc[:, :-1]",
+            "    y = df.iloc[:, -1]",
             "",
             "# Train/test split, then 5-fold cross-validation (scikit-learn only, so the sandbox can run it)",
             "_pipeline = Pipeline([('scale', StandardScaler()), ('clf', LogisticRegression(max_iter=1000))])",
@@ -566,8 +632,7 @@ class MLExperimentCodeTemplate(CodeTemplate):
             "print(f\"F1 Score: {results['train_test_results']['f1_score']:.4f}\")",
             "",
             "# Propagate data source and assumption checks into results",
-            "if '_data_source' in dir():",
-            "    results['data_source'] = _data_source",
+            "results['data_source'] = _data_source",
             "results['assumption_checks'] = {",
             "    'normality_tested': False,",
             "    'sample_size_adequate': len(df) >= 30,",
@@ -599,19 +664,16 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             ExperimentType.DATA_ANALYSIS,
         )
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
-        """Generate generic computational analysis code."""
-        vars_list = list(protocol.variables.keys())
-        x_var = vars_list[0] if len(vars_list) > 0 else 'x'
-        y_var = vars_list[1] if len(vars_list) > 1 else 'y'
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
+        """Generate generic computational analysis code.
+
+        Tests the bound independent column (x) against the bound dependent
+        column (y): Pearson correlation when x is numeric, Welch t-test when x
+        has two levels, one-way ANOVA when it has 3 to 10.
+        """
+        x_var, y_var = _xy_columns(protocol)
 
         seed = getattr(protocol, 'random_seed', 42) or 42
-
-        # Determine statistical tests from protocol
-        stat_tests = []
-        for test in protocol.statistical_tests:
-            test_type_str = test.test_type.value if hasattr(test.test_type, 'value') else str(test.test_type)
-            stat_tests.append(test_type_str.lower())
 
         code_lines = [
             "# Computational Experiment Analysis",
@@ -623,16 +685,21 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "from scipy.optimize import curve_fit",
             "from pathlib import Path",
             "",
+            f"_x_col = {x_var!r}",
+            f"_y_col = {y_var!r}",
+            "",
             "# Data loading with synthetic fallback",
-            f"# Expected format: CSV with relevant columns",
+            "# Expected format: CSV with columns _x_col and _y_col",
             "df = None",
-            "if 'data_path' in dir() and data_path:",
+            *_DATA_PATH_GUARD,
+            "if data_path:",
             "    try:",
             "        df = pd.read_csv(data_path)",
             "        _data_source = 'file'",
             "    except Exception as e:",
             "        print(f'Warning: Could not load data: {e}')",
             "        df = None",
+            *_missing_columns_check("[_x_col, _y_col]"),
             "if df is None:",
             f"    # Generate synthetic data for computational experiment",
             f"    np.random.seed({seed})",
@@ -640,17 +707,18 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "    _x_syn = np.linspace(0, 10, n)",
             "    noise = np.random.normal(0, 0.5, n)",
             "    _y_syn = 2.0 * np.exp(-0.3 * _x_syn) + noise",
-            f"    df = pd.DataFrame({{{x_var!r}: _x_syn, {y_var!r}: _y_syn}})",
+            "    df = pd.DataFrame({_x_col: _x_syn, _y_col: _y_syn})",
             "    _data_source = 'synthetic'",
             "",
-            "# Clean data",
-            "df = df.dropna()",
-            f"print(f'Loaded {{len(df)}} samples (source: {{_data_source}})')",
+            "# Clean data: keep rows where both analysis columns are present",
+            "df = df.dropna(subset=[_x_col, _y_col])",
+            "print(f'Loaded {len(df)} samples (source: {_data_source})')",
             "",
             "# Statistical analysis",
             "results = {}",
             "results['n_samples'] = len(df)",
             "results['data_source'] = _data_source",
+            "results['columns'] = {'x': _x_col, 'y': _y_col}",
             "",
             "# Descriptive statistics",
             "results['descriptive'] = {}",
@@ -663,16 +731,17 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "        'max': float(df[col].max()),",
             "    }",
             "",
-            "# Primary statistical test",
-            "numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()",
-            "if len(numeric_cols) >= 2:",
-            "    col_x = numeric_cols[0]",
-            "    col_y = numeric_cols[1]",
-            "    x_vals = df[col_x].values",
-            "    y_vals = df[col_y].values",
+            "# Primary statistical test on the bound columns",
+            "if not pd.api.types.is_numeric_dtype(df[_y_col]):",
+            "    raise ValueError(f'Dependent column {_y_col!r} must be numeric, got dtype {df[_y_col].dtype}')",
+            "y_vals = df[_y_col].astype(float).values",
+            "if pd.api.types.is_numeric_dtype(df[_x_col]):",
+            "    x_vals = df[_x_col].astype(float).values",
+            "    if len(x_vals) < 3:",
+            "        raise ValueError(f'Correlation needs at least 3 complete rows in {_x_col!r} and {_y_col!r}, got {len(x_vals)}')",
             "",
             "    # Normality check",
-            "    for _col, _vals in [(col_x, x_vals), (col_y, y_vals)]:",
+            "    for _col, _vals in [(_x_col, x_vals), (_y_col, y_vals)]:",
             "        if len(_vals) >= 8:",
             "            _shap_stat, _shap_p = stats.shapiro(_vals[:5000])",
             "            if _shap_p < 0.05:",
@@ -687,6 +756,8 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "        'spearman_r': float(spearman_r),",
             "        'spearman_p': float(spearman_p),",
             "    }",
+            "    results['test_type'] = 'pearson_correlation'",
+            "    results['statistic'] = float(pearson_r)",
             "    results['p_value'] = float(pearson_p)",
             "    results['effect_size'] = float(pearson_r)",
             "",
@@ -717,20 +788,41 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "        'p_value': float(p_value),",
             "        'std_err': float(std_err),",
             "    }",
-            "",
-            "elif len(numeric_cols) == 1:",
-            "    # Single variable: one-sample t-test against zero",
-            "    col = numeric_cols[0]",
-            "    vals = df[col].values",
-            "    t_stat, p_value = stats.ttest_1samp(vals, 0)",
-            "    results['one_sample_ttest'] = {",
-            "        't_statistic': float(t_stat),",
-            "        'p_value': float(p_value),",
-            "        'mean': float(np.mean(vals)),",
-            "        'std': float(np.std(vals)),",
-            "    }",
-            "    results['p_value'] = float(p_value)",
-            "    results['effect_size'] = float(np.mean(vals) / np.std(vals)) if np.std(vals) > 0 else 0.0",
+            "else:",
+            "    # Categorical x: compare the dependent column across its groups",
+            "    _labels = df[_x_col].astype(str)",
+            "    _levels = sorted(_labels.unique())",
+            "    _groups = [y_vals[(_labels == _lvl).values] for _lvl in _levels]",
+            "    if not 2 <= len(_levels) <= 10:",
+            "        raise ValueError(",
+            "            f'Independent column {_x_col!r} has {len(_levels)} levels; '",
+            "            f'a group comparison needs 2 to 10 (or a numeric column)'",
+            "        )",
+            "    _small = [l for l, g in zip(_levels, _groups) if len(g) < 2]",
+            "    if _small:",
+            "        raise ValueError(f'Groups {_small} of column {_x_col!r} have fewer than 2 rows of {_y_col!r}')",
+            "    results['groups'] = {l: {'n': int(len(g)), 'mean': float(np.mean(g))} for l, g in zip(_levels, _groups)}",
+            "    if len(_levels) == 2:",
+            "        _g1, _g2 = _groups",
+            "        _t_stat, _p_val = stats.ttest_ind(_g1, _g2, equal_var=False)",
+            "        _n1, _n2 = len(_g1), len(_g2)",
+            "        _pooled_sd = float(np.sqrt(((_n1 - 1) * np.var(_g1, ddof=1) + (_n2 - 1) * np.var(_g2, ddof=1)) / (_n1 + _n2 - 2)))",
+            "        _mean_diff = float(np.mean(_g1) - np.mean(_g2))",
+            "        results['test_type'] = 'welch_t_test'",
+            "        results['statistic'] = float(_t_stat)",
+            "        results['p_value'] = float(_p_val)",
+            "        results['effect_size'] = _mean_diff / _pooled_sd if _pooled_sd > 0 else 0.0",
+            "        results['mean_difference'] = _mean_diff",
+            "    else:",
+            "        _f_stat, _p_val = stats.f_oneway(*_groups)",
+            "        _grand_mean = float(np.mean(y_vals))",
+            "        _ss_between = float(sum(len(g) * (np.mean(g) - _grand_mean) ** 2 for g in _groups))",
+            "        _ss_total = float(np.sum((y_vals - _grand_mean) ** 2))",
+            "        results['test_type'] = 'one_way_anova'",
+            "        results['statistic'] = float(_f_stat)",
+            "        results['p_value'] = float(_p_val)",
+            "        results['effect_size'] = _ss_between / _ss_total if _ss_total > 0 else 0.0  # eta squared",
+            "results['n'] = int(len(df))",
             "",
             "# Assumption checks",
             "results['assumption_checks'] = {",
@@ -739,11 +831,9 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "}",
             "",
             "# Print summary",
-            "print(f'Analysis complete: {len(results)} result keys')",
-            "if 'p_value' in results:",
-            "    print(f'Primary p-value: {results[\"p_value\"]:.6f}')",
-            "if 'effect_size' in results:",
-            "    print(f'Effect size: {results[\"effect_size\"]:.4f}')",
+            "print(f\"Test: {results['test_type']} of {_y_col!r} on {_x_col!r}\")",
+            "print(f'Primary p-value: {results[\"p_value\"]:.6f}')",
+            "print(f'Effect size: {results[\"effect_size\"]:.4f}')",
         ]
 
         return "\n".join(code_lines)
@@ -808,16 +898,25 @@ class ExperimentCodeGenerator:
 
         logger.info(f"Registered {len(self.templates)} code templates")
 
-    def generate(self, protocol: ExperimentProtocol) -> str:
+    def generate(self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None) -> str:
         """
         Generate code from protocol using hybrid approach.
 
         Args:
             protocol: Experiment protocol
+            dataset_schema: Schema of the supplied dataset; its columns go into
+                the LLM prompt and two-level columns supply t-test group labels
 
         Returns:
             Generated Python code as string
+
+        Raises:
+            ValueError: if the protocol is bound to a dataset (a schema is given
+                or any variable has a column) but the analysed x or y variable
+                has no column
         """
+        self._check_bindings(protocol, dataset_schema)
+
         code = None
 
         # Step 1: Try template matching
@@ -825,7 +924,7 @@ class ExperimentCodeGenerator:
             template = self._match_template(protocol)
             if template:
                 logger.info(f"Using template: {template.name}")
-                code = template.generate(protocol)
+                code = template.generate(protocol, dataset_schema=dataset_schema)
 
                 # Optionally enhance with LLM
                 if self.llm_enhance_templates and self.llm_client:
@@ -834,7 +933,7 @@ class ExperimentCodeGenerator:
         # Step 2: Fall back to LLM generation
         if code is None and self.use_llm:
             logger.info("No template matched, using LLM generation")
-            code = self._generate_with_llm(protocol)
+            code = self._generate_with_llm(protocol, dataset_schema)
 
         # Step 3: Fallback to basic template
         if code is None:
@@ -846,6 +945,17 @@ class ExperimentCodeGenerator:
 
         return code
 
+    @staticmethod
+    def _check_bindings(protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"]) -> None:
+        """Refuse to analyse a dataset-bound protocol whose x or y has no column."""
+        bound = dataset_schema is not None or any(v.column for v in protocol.variables.values())
+        if not bound:
+            return
+        x, y = _xy_variables(protocol)
+        unbound = [v.name for v in (x, y) if v is not None and v.column is None]
+        if x is None or y is None or unbound:
+            raise ValueError(f"protocol has unbound variables: {unbound or 'no x/y variables'}")
+
     def _match_template(self, protocol: ExperimentProtocol) -> Optional[CodeTemplate]:
         """Find best matching template for protocol."""
         for template in self.templates:
@@ -853,9 +963,11 @@ class ExperimentCodeGenerator:
                 return template
         return None
 
-    def _generate_with_llm(self, protocol: ExperimentProtocol) -> str:
+    def _generate_with_llm(
+        self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None
+    ) -> str:
         """Generate code using Claude LLM."""
-        prompt = self._create_code_generation_prompt(protocol)
+        prompt = self._create_code_generation_prompt(protocol, dataset_schema)
 
         try:
             response = self.llm_client.generate(prompt)
@@ -869,7 +981,9 @@ class ExperimentCodeGenerator:
             logger.error(f"LLM code generation failed: {e}")
             return None
 
-    def _create_code_generation_prompt(self, protocol: ExperimentProtocol) -> str:
+    def _create_code_generation_prompt(
+        self, protocol: ExperimentProtocol, dataset_schema: Optional["DatasetSchema"] = None
+    ) -> str:
         """Create prompt for LLM code generation."""
         steps_text = "\n".join([
             f"{i+1}. {step.title}: {step.action}"
@@ -877,9 +991,19 @@ class ExperimentCodeGenerator:
         ])
 
         variables_text = "\n".join([
-            f"- {name} ({var.type.value}): {var.description}"
+            f"- {name} ({var.type.value})"
+            + (f" -> dataset column {var.column!r}" if var.column else "")
+            + f": {var.description}"
             for name, var in protocol.variables.items()
         ])
+
+        dataset_text = ""
+        if dataset_schema is not None:
+            dataset_text = (
+                "\n**Dataset:**\n" + dataset_schema.to_prompt_block() + "\n"
+                "Read only these exact column names; each variable's dataset column is given above. "
+                "Do not invent columns and do not fall back to synthetic data.\n"
+            )
 
         tests_text = "\n".join([
             f"- {test.test_type}: {test.description}"
@@ -897,7 +1021,7 @@ class ExperimentCodeGenerator:
 
 **Variables:**
 {variables_text}
-
+{dataset_text}
 **Statistical Tests:**
 {tests_text}
 

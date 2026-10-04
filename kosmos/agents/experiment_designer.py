@@ -9,7 +9,7 @@ import logging
 import time
 import uuid
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from kosmos.agents.base import BaseAgent, AgentMessage, MessageType, AgentStatus
@@ -42,7 +42,30 @@ from kosmos.db.models import (
 )
 from kosmos.db import get_session
 
+if TYPE_CHECKING:
+    from kosmos.execution.data_schema import DatasetSchema
+
 logger = logging.getLogger(__name__)
+
+
+class UnboundVariableError(ValueError):
+    """An independent or dependent variable could not be bound to a dataset column."""
+
+    def __init__(
+        self,
+        hypothesis_id: Optional[str],
+        unbound_names: List[str],
+        available_columns: List[str],
+        reason: Optional[str] = None,
+    ):
+        self.hypothesis_id = hypothesis_id
+        self.unbound_names = list(unbound_names)
+        self.available_columns = list(available_columns)
+        self.reason = reason or "no matching dataset column"
+        super().__init__(
+            f"Hypothesis {hypothesis_id}: variables {self.unbound_names} cannot be bound "
+            f"({self.reason}); available columns: {self.available_columns}"
+        )
 
 
 class ExperimentDesignerAgent(BaseAgent):
@@ -168,7 +191,9 @@ class ExperimentDesignerAgent(BaseAgent):
         preferred_experiment_type: Optional[ExperimentType] = None,
         max_cost_usd: Optional[float] = None,
         max_duration_days: Optional[float] = None,
-        store_in_db: bool = True
+        store_in_db: bool = True,
+        *,
+        dataset_schema: Optional["DatasetSchema"] = None,
     ) -> ExperimentDesignResponse:
         """
         Design an experimental protocol for a hypothesis.
@@ -180,12 +205,17 @@ class ExperimentDesignerAgent(BaseAgent):
             max_cost_usd: Maximum cost constraint
             max_duration_days: Maximum duration constraint
             store_in_db: Whether to store protocol in database
+            dataset_schema: Schema of the supplied dataset. When given, the
+                protocol is designed by the LLM (templates are skipped) and every
+                independent and dependent variable must bind to a real column.
 
         Returns:
             ExperimentDesignResponse with protocol and metadata
 
         Raises:
             ValueError: If hypothesis invalid or design fails
+            UnboundVariableError: If dataset_schema is given and a variable has
+                no matching column
         """
         start_time = time.time()
 
@@ -202,7 +232,16 @@ class ExperimentDesignerAgent(BaseAgent):
         logger.info(f"Selected experiment type: {experiment_type.value}")
 
         # Step 3: Select or generate protocol
-        if self.use_templates:
+        if dataset_schema is not None:
+            # Templates use placeholder variables that name no real column
+            protocol = self._generate_with_claude(
+                hypothesis=hypothesis,
+                experiment_type=experiment_type,
+                max_cost_usd=max_cost_usd,
+                max_duration_days=max_duration_days,
+                dataset_schema=dataset_schema,
+            )
+        elif self.use_templates:
             protocol = self._generate_from_template(
                 hypothesis=hypothesis,
                 experiment_type=experiment_type,
@@ -218,7 +257,7 @@ class ExperimentDesignerAgent(BaseAgent):
             )
 
         # Step 4: Enhance with LLM if enabled
-        if self.use_llm_enhancement and self.use_templates:
+        if self.use_llm_enhancement and self.use_templates and dataset_schema is None:
             protocol = self._enhance_protocol_with_llm(protocol, hypothesis)
 
         # Step 4b: Power analysis — calculate required sample size
@@ -443,10 +482,19 @@ class ExperimentDesignerAgent(BaseAgent):
         hypothesis: Hypothesis,
         experiment_type: ExperimentType,
         max_cost_usd: Optional[float],
-        max_duration_days: Optional[float]
+        max_duration_days: Optional[float],
+        dataset_schema: Optional["DatasetSchema"] = None,
     ) -> ExperimentProtocol:
         """Generate protocol using Claude LLM."""
         logger.info("Generating protocol with Claude")
+
+        dataset_context = ""
+        if dataset_schema is not None:
+            dataset_context = (
+                "\n" + dataset_schema.to_prompt_block() + "\n\n"
+                "Every independent and dependent variable MUST include "
+                "\"column\": \"<exact column name from the dataset>\"; do not invent columns.\n"
+            )
 
         # Build prompt
         prompt = EXPERIMENT_DESIGNER.format(
@@ -456,7 +504,8 @@ class ExperimentDesignerAgent(BaseAgent):
             experiment_type=experiment_type.value,
             max_cost_usd=max_cost_usd or "unlimited",
             max_duration_days=max_duration_days or "flexible",
-            research_question=hypothesis.research_question
+            research_question=hypothesis.research_question,
+            dataset_context=dataset_context,
         )
 
         # Define expected JSON schema for structured output
@@ -480,7 +529,17 @@ class ExperimentDesignerAgent(BaseAgent):
                         "required": ["step_number", "title", "description", "action"]
                     }
                 },
-                "variables": {"type": "object"},
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string"},
+                            "description": {"type": "string"},
+                            "column": {"type": "string"},
+                        },
+                    },
+                },
                 "control_groups": {"type": "array"},
                 "statistical_tests": {"type": "array"},
                 "sample_size": {"type": "integer"},
@@ -507,10 +566,14 @@ class ExperimentDesignerAgent(BaseAgent):
                 logger.error(f"Failed to generate valid protocol data: {response}")
                 raise ValueError("LLM returned invalid protocol data")
 
-            protocol = self._parse_claude_protocol(protocol_data, hypothesis, experiment_type)
+            protocol = self._parse_claude_protocol(
+                protocol_data, hypothesis, experiment_type, dataset_schema=dataset_schema
+            )
 
             return protocol
 
+        except UnboundVariableError:
+            raise
         except Exception as e:
             logger.error(f"Error generating protocol with Claude: {e}")
             raise ValueError(f"Failed to generate protocol: {e}")
@@ -519,9 +582,16 @@ class ExperimentDesignerAgent(BaseAgent):
         self,
         data: Dict[str, Any],
         hypothesis: Hypothesis,
-        experiment_type: ExperimentType
+        experiment_type: ExperimentType,
+        dataset_schema: Optional["DatasetSchema"] = None,
     ) -> ExperimentProtocol:
-        """Parse Claude's response into ExperimentProtocol."""
+        """Parse Claude's response into ExperimentProtocol.
+
+        With dataset_schema, each variable's "column" (or, failing that, its
+        name) is resolved against the dataset columns and stored in
+        Variable.column; an unbound independent or dependent variable raises
+        UnboundVariableError.
+        """
         # Parse steps
         steps = []
         for step_data in data.get("steps", []):
@@ -562,6 +632,7 @@ class ExperimentDesignerAgent(BaseAgent):
                     fixed_value=var_data.get("fixed_value"),
                     unit=var_data.get("unit"),
                     measurement_method=var_data.get("measurement_method"),
+                    column=self._bind_column(var_data.get("column"), var_name, dataset_schema),
                 )
 
         # Validate: generate minimal default steps if LLM returned empty list
@@ -600,6 +671,9 @@ class ExperimentDesignerAgent(BaseAgent):
                     description=f"Primary dependent variable for {hypothesis.domain} analysis",
                 ),
             }
+
+        if dataset_schema is not None:
+            self._check_bindings(variables, hypothesis, dataset_schema)
 
         # Parse control groups
         control_groups = []
@@ -677,6 +751,48 @@ class ExperimentDesignerAgent(BaseAgent):
         )
 
         return protocol
+
+    @staticmethod
+    def _bind_column(
+        proposed: Any,
+        var_name: str,
+        dataset_schema: Optional["DatasetSchema"],
+    ) -> Optional[str]:
+        """Resolve a variable's proposed column, then its name, against the dataset."""
+        if dataset_schema is None:
+            return None
+        for candidate in (proposed, var_name):
+            column = dataset_schema.resolve_column(candidate if isinstance(candidate, str) else None)
+            if column is not None:
+                return column
+        return None
+
+    @staticmethod
+    def _check_bindings(
+        variables: Dict[str, Variable],
+        hypothesis: Hypothesis,
+        dataset_schema: "DatasetSchema",
+    ) -> None:
+        """Raise UnboundVariableError unless every independent and dependent variable is bound."""
+        used = [v for v in variables.values()
+                if v.type in (VariableType.INDEPENDENT, VariableType.DEPENDENT)]
+        unbound = [v.name for v in used if v.column is None]
+        if unbound:
+            raise UnboundVariableError(hypothesis.id, unbound, dataset_schema.columns)
+
+        indep = [v for v in used if v.type == VariableType.INDEPENDENT]
+        dep = [v for v in used if v.type == VariableType.DEPENDENT]
+        if not indep or not dep:
+            missing = "independent" if not indep else "dependent"
+            raise UnboundVariableError(
+                hypothesis.id, [v.name for v in used], dataset_schema.columns,
+                reason=f"no {missing} variable",
+            )
+        if indep[0].column == dep[0].column:
+            raise UnboundVariableError(
+                hypothesis.id, [indep[0].name, dep[0].name], dataset_schema.columns,
+                reason=f"independent and dependent both bound to column {indep[0].column!r}",
+            )
 
     def _enhance_protocol_with_llm(
         self,

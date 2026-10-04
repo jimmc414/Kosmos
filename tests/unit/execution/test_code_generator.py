@@ -420,6 +420,8 @@ class TestGenericTemplate:
         ast.parse(code)
 
     def test_generic_code_reads_the_data_file(self, code_generator, generic_protocol, tmp_path):
+        generic_protocol.variables["CO2 concentration"].column = "year"
+        generic_protocol.variables["temp anomaly"].column = "co2_ppm"
         code = code_generator.generate(generic_protocol)
         csv = tmp_path / "data.csv"
         rows = ["year,co2_ppm"] + [f"{2000 + i},{370 + 2.1 * i + (i % 3) * 0.4}" for i in range(10)]
@@ -432,6 +434,17 @@ class TestGenericTemplate:
         assert ns["results"]["data_source"] == "file"
         assert isinstance(ns["results"]["p_value"], float)
         assert ns["results"]["n_samples"] == 10
+        assert ns["results"]["columns"] == {"x": "year", "y": "co2_ppm"}
+
+    def test_generic_code_names_missing_columns(self, code_generator, generic_protocol, tmp_path):
+        # Unbound variable names are not columns of this file: fail, never analyse other columns (P2-1)
+        code = code_generator.generate(generic_protocol)
+        csv = tmp_path / "data.csv"
+        csv.write_text("year,co2_ppm\n2000,370\n2001,372\n2002,373\n")
+
+        with pytest.raises(KeyError, match="Dataset is missing required columns"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                exec(code, {"data_path": str(csv)})
 
     def test_llm_prompt_forbids_kosmos_imports(self, code_generator, generic_protocol):
         prompt = code_generator._create_code_generation_prompt(generic_protocol)

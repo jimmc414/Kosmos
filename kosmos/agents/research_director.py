@@ -100,8 +100,12 @@ class ResearchDirectorAgent(BaseAgent):
         self.skills: Optional[str] = None
         self._load_skills()
 
-        # Dataset path for experiments
+        # Dataset path for experiments; its schema binds protocol variables to columns
         self.data_path = self.config.get("data_path")
+        self.dataset_schema = None
+        if self.data_path:
+            from kosmos.execution.data_schema import describe_dataset
+            self.dataset_schema = describe_dataset(self.data_path)
 
         # Arm budget enforcement for --budget; decide_next_action enforces it
         budget_usd = self.config.get("budget_usd")
@@ -1445,7 +1449,8 @@ class ResearchDirectorAgent(BaseAgent):
                 research_question=self.research_question,
                 num_hypotheses=self.config.get("num_hypotheses", 3),
                 domain=self.domain,
-                store_in_db=True
+                store_in_db=True,
+                dataset_context=self.dataset_schema.to_prompt_block() if self.dataset_schema else None,
             )
 
             # Track rollout (Issue #58)
@@ -1498,7 +1503,7 @@ class ResearchDirectorAgent(BaseAgent):
         Issue #76 extension: Replaces message-based experiment design with direct call.
         Same pattern as _handle_convergence_action().
         """
-        from kosmos.agents.experiment_designer import ExperimentDesignerAgent
+        from kosmos.agents.experiment_designer import ExperimentDesignerAgent, UnboundVariableError
 
         try:
             # Lazy-init the agent
@@ -1507,10 +1512,19 @@ class ResearchDirectorAgent(BaseAgent):
 
             logger.info(f"Designing experiment for hypothesis {hypothesis_id} via direct call")
 
-            response = self._experiment_designer.design_experiment(
-                hypothesis_id=hypothesis_id,
-                store_in_db=True
-            )
+            try:
+                response = self._experiment_designer.design_experiment(
+                    hypothesis_id=hypothesis_id,
+                    store_in_db=True,
+                    dataset_schema=self.dataset_schema,
+                )
+            except UnboundVariableError as unbound:
+                # Not an error: the hypothesis cannot be tested on this dataset.
+                # Its DB status stays GENERATED; it only leaves the untested list.
+                logger.warning(f"Hypothesis {hypothesis_id} is untestable on the dataset: {unbound}")
+                with self._research_plan_context():
+                    self.research_plan.mark_untestable(hypothesis_id)
+                return
 
             # Track rollout (Issue #58)
             self.rollout_tracker.increment("experiment_design")
@@ -1608,7 +1622,7 @@ class ResearchDirectorAgent(BaseAgent):
                     raise ValueError(f"Experiment {protocol_id} has no valid protocol data")
 
             # Generate code from protocol
-            code = self._code_generator.generate(protocol)
+            code = self._code_generator.generate(protocol, dataset_schema=self.dataset_schema)
 
             # Execute code
             if self._code_executor is None:

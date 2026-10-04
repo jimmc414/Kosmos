@@ -144,7 +144,8 @@ class HypothesisGeneratorAgent(BaseAgent):
         research_question: str,
         num_hypotheses: Optional[int] = None,
         domain: Optional[str] = None,
-        store_in_db: bool = True
+        store_in_db: bool = True,
+        dataset_context: Optional[str] = None
     ) -> HypothesisGenerationResponse:
         """
         Generate hypotheses from research question.
@@ -154,6 +155,9 @@ class HypothesisGeneratorAgent(BaseAgent):
             num_hypotheses: Number of hypotheses to generate (default: config value)
             domain: Scientific domain (auto-detected if None)
             store_in_db: Whether to store hypotheses in database
+            dataset_context: Description of the supplied dataset's columns;
+                appended to the question in the prompt only, so hypotheses
+                name measurable columns (the stored question is unchanged)
 
         Returns:
             HypothesisGenerationResponse: Generated hypotheses with metadata
@@ -188,7 +192,8 @@ class HypothesisGeneratorAgent(BaseAgent):
             research_question=research_question,
             domain=domain,
             num_hypotheses=num_hypotheses,
-            context_papers=papers
+            context_papers=papers,
+            dataset_context=dataset_context
         )
 
         # Step 4: Validate hypotheses
@@ -324,7 +329,8 @@ No explanation needed."""
         research_question: str,
         domain: str,
         num_hypotheses: int,
-        context_papers: List[PaperMetadata]
+        context_papers: List[PaperMetadata],
+        dataset_context: Optional[str] = None
     ) -> List[Hypothesis]:
         """
         Generate hypotheses using Claude with structured output.
@@ -353,8 +359,14 @@ No explanation needed."""
                 literature_context += "\n"
 
         # Create prompt
+        question_for_prompt = research_question
+        if dataset_context:
+            question_for_prompt = (
+                f"{research_question}\n\nThe hypotheses will be tested on this dataset; "
+                f"state each one in terms of its columns:\n{dataset_context}"
+            )
         prompt = HYPOTHESIS_GENERATOR.render(
-            research_question=research_question,
+            research_question=question_for_prompt,
             domain=domain,
             num_hypotheses=num_hypotheses,
             literature_context=literature_context or "No specific literature context provided."

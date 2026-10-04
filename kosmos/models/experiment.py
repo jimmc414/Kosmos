@@ -67,6 +67,9 @@ class Variable(BaseModel):
     unit: Optional[str] = None  # e.g., "seconds", "percentage", "count"
     measurement_method: Optional[str] = None  # How to measure/compute this variable
 
+    # Exact dataset column this variable is bound to (set when a dataset is supplied)
+    column: Optional[str] = None
+
     @field_validator('description')
     @classmethod
     def validate_description(cls, v: str) -> str:
@@ -503,6 +506,7 @@ class ExperimentProtocol(BaseModel):
                     "fixed_value": v.fixed_value,
                     "unit": v.unit,
                     "measurement_method": v.measurement_method,
+                    "column": v.column,
                 }
                 for name, v in self.variables.items()
             },
