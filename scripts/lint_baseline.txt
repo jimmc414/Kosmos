@@ -1,0 +1,3 @@
+# baseline accepted: pre-existing on master at 73f4d2a (Tier C module kept by MAP D-04) (2026-10-04, HEAD dc62f8a)
+# ruff --select E9,F63,F7,F82 over kosmos/, line and column stripped. Moves only through `bash scripts/verify.sh --accept-lint-baseline "<cause>"`.
+kosmos/experiments/templates/materials/shap_analysis.py: F821 Undefined name `top_3_features`

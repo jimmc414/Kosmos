@@ -113,8 +113,8 @@ downgrade one on a scratch copy) · 4 template-run (the no-LLM bound template th
 sandbox on the climate CSV). Pass string: `VERIFY PASS (4 gates)`. Launch it detached
 (`bash scripts/verify.sh --detach`, then poll the marker it names) and read the string from the
 log, never from an exit code. A red from a parallel or cached run is not a result. Needs: the
-Docker daemon and kosmos-sandbox:latest. Env: .env (never printed). Duration: measured in s0 step
-B1 and recorded here.
+Docker daemon and kosmos-sandbox:latest. Env: .env (never printed). Duration: about 8 minutes (471 s measured s0 2026-10-04, first
+green run: 03:00:09 → 03:08:00; gate 2 alone about 7 minutes).
 
 ## PROCESS RULES (graduated from SESSION_STATE §STANDING after biting twice; numbers are stable ids,
 never reused; rules 1–11 are inherited from the process document §9.2 at adoption)

@@ -191,3 +191,29 @@ One AskUserQuestion round, 2026-10-04, s0. Each answer is the owner's selected o
 - **(d) Where Session 0's files land.** Question: viability-fixes (default) or a branch of its own.
   Answer: "On viability-fixes (Recommended; default)".
   put: docs/MAP.md §4 D-23; every s0 commit is on viability-fixes.
+
+## §B1 The ladder: controls and measurements (Session 0, 2026-10-04)
+scripts/verify.sh gates: 1 compile-lint · 2 tests · 3 alembic · 4 template-run. Every control
+below was run once by hand from the recipe in the script's header; the run directories are
+under /tmp/kosmos-verify/run_*/ (scratch; not kept).
+
+| Gate | Control | Result |
+|---|---|---|
+| 1 | RED-a: `kosmos/zz_probe.py` with `def f(:` | `=== gate 1 RED: compileall found a syntax error` |
+| 1 | RED-b: `kosmos/zz_probe.py` with `x = undefined_probe_name` | `=== gate 1 RED: lint findings outside scripts/lint_baseline.txt:` (F821) |
+| 1 | GREEN: probe removed | `=== gate 1 OK` (lint: 1 finding, in the baseline) |
+| 1 | self-tests inside the gate | compileall refuses to pass a syntax-error probe; ruff refuses to pass an undefined-name probe (both run on every ladder run) |
+| 2 | RED/GREEN on the judge (milliseconds, synthetic logs) | new id vs empty baseline rc 1 · id in baseline rc 0 · no summary line rc 2 · blank cause rc 3 |
+| 2 | isolation | two full runs: owner kosmos.db md5 2758f443… unchanged, research_sessions 0 → 0; scratch ladder.db received 92 ResearchSession rows and reached a0aa37ea19f2 |
+| 2 | baseline stamp | `--accept-baseline "pre-existing on master at 73f4d2a or recorded in the tracker Notes (incl. the two order-dependent caplog tests); stamped on the s0 tree"` → 394 node ids at HEAD dc62f8a; the two measurement runs (02:11 and 02:48) produced IDENTICAL red sets (no flaky id) |
+| 2 | RED on the real suite (a new failing test file) | not run in s0 (it costs a 7.5-minute run and the judge's RED control proves the comparison); recipe kept in the script header; FACTORY#ladder-gates runs it once |
+| 3 | RED: `raise RuntimeError` at the top of upgrade() in the newest revision | `=== gate 3 RED: re-upgrade failed` (the copy was already at head, so the first upgrade was a no-op, the downgrade succeeded, and the re-upgrade hit the raise); revision restored, md5 verified |
+| 3 | GREEN | `=== gate 3 OK` — `alembic: head a0aa37ea19f2 reached twice; owner kosmos.db untouched` |
+| 4 | RED: `VERIFY_TEMPLATE_CSV=/nonexistent.csv` | `gate 4 RED: dataset missing: /nonexistent.csv` |
+| 4 | GREEN: the climate CSV through kosmos-sandbox:latest | `gate 4 OK: sandbox template run r=0.9317 p=5.77e-29 n=64 in 1.8s` |
+
+Timings: gate 2 = 447 s and 429 s of pytest in the two measurement runs (7 min 27 s and
+7 min 09 s; wall 7 min 48 s and 7 min 26 s including collection); gates 1, 3 and 4 together
+under 40 s. Full ladder, first green run on the finished ladder (HEAD dc62f8a plus the uncommitted
+s0 files): `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (471 s)`, 03:00:09 →
+03:08:00 (gate 2 411 s). The second full run is B8's, recorded in the s0 session block.
