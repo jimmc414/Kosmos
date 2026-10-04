@@ -1,3 +1,6 @@
+> FROZEN 2026-10-04 (Session 0): the record of P0 through P2-3 and the A-2 spec; not edited again. The live ledger is SESSION_STATE.md,
+> the frozen plan is docs/PLAN.md, the open-items register is docs/execution/BACKLOG.md; resume with `/factory-continue`, not `/next-plan-item`.
+
 # Viability Plan Progress
 
 Tracker for executing `evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md` (the plan) across sessions. The `/next-plan-item` skill (`.claude/skills/next-plan-item/SKILL.md`) reads this file, does the next item, and updates it. This file and `git log viability-fixes` are the only state that survives a context clear.
