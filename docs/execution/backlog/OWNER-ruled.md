@@ -1,0 +1,5 @@
+# BACKLOG — ruled owner asks (verbatim ruling + `put:` clause)
+- **`OWNER#stop-and-ask-list`** — the seven-item STOP-AND-ASK list — ruling 2026-10-04 (s0, AskUserQuestion): "Approve the seven items as drafted (Recommended)" — put: CLAUDE.md §STOP AND ASK THE OWNER; docs/MAP.md §6 — **ruled 2026-10-04** (s0)
+- **`OWNER#map-signoff`** — sign MAP D-01 to D-24 and the S0–S4 exit gates — ruling 2026-10-04: "Sign D-01–D-24 and the S0–S4 exit gates as drafted (Recommended)" — put: docs/MAP.md §2 and §4; docs/MAP_CHANGELOG.md 2026-10-04 row — **ruled 2026-10-04** (s0)
+- **`OWNER#runner-permission-mode`** — skip-permissions flag with the deny-list, or a per-project allowlist — ruling 2026-10-04: "Skip-permissions flag + deny-list (Recommended; Genesis practice)" — put: docs/MAP.md §4 D-24; .claude/settings.json deny-list; FACTORY#runner — **ruled 2026-10-04** (s0)
+- **`OWNER#s0-branch`** — where Session 0's files land — ruling 2026-10-04: "On viability-fixes (Recommended; default)" — put: docs/MAP.md §4 D-23 — **ruled 2026-10-04** (s0)
