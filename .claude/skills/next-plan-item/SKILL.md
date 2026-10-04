@@ -46,5 +46,6 @@ Executes `evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md` (the plan) one ite
 ## 6. Commit and record
 
 1. Update the tracker: row status `done`, Notes with deviations and anything a later item must know (renamed helpers, changed line positions of later targets, defects found). Append one line to the session log.
-2. Stage the edited source and test files and the tracker by name, then `git commit -m "<ID>: <imperative summary>"`. No attribution lines. Do not push.
-3. Report to the owner in a few lines: what changed, the test command and its result, deviations, cost of any live call, and the next item's ID and title. Then stop, unless running `continue N`.
+2. Stage the edited source and test files and the tracker by name, then `git commit -m "<ID>: <imperative summary>"`. No attribution lines.
+3. At the end of the session (after the last item, or when stopping on a block), push the branch with `git push -u origin viability-fixes`, including any commits queued from earlier sessions. Never force-push. Report the push result.
+4. Report to the owner in a few lines: what changed, the test command and its result, deviations, cost of any live call, and the next item's ID and title. Then stop, unless running `continue N`.
