@@ -153,3 +153,6 @@ data/*.parquet
 data/*.h5
 !data/benchmarks/
 CLAUDE.md
+
+# Per-run artifacts (KOSMOS_ARTIFACTS_DIR default); tracked artifacts/baseline_* stay
+artifacts/runs/

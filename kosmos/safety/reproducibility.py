@@ -151,7 +151,7 @@ class ReproducibilityManager:
             torch.manual_seed(seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
-        except ImportError:
+        except Exception:  # absent, or a broken install that raises on import
             pass
 
         # Try to set TensorFlow seed if available

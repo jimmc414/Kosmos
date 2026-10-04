@@ -16,8 +16,10 @@ Features:
 
 import hashlib
 import logging
+import platform
 from dataclasses import dataclass, asdict, field
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,93 @@ def get_git_sha() -> Optional[str]:
     except Exception as e:
         logger.debug(f"Git commit hash retrieval failed: {e}")
     return None
+
+
+def _kosmos_version() -> Optional[str]:
+    """Installed distribution version, else the package's __version__."""
+    import importlib.metadata
+    for dist in ("kosmos-ai-scientist", "kosmos"):
+        try:
+            return importlib.metadata.version(dist)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    try:
+        from kosmos import __version__
+        return __version__
+    except ImportError:
+        return None
+
+
+def _file_sha256_and_rows(data_path: str) -> tuple:
+    """SHA-256 of the file bytes and its line count less a header, or (None, None)."""
+    try:
+        digest = hashlib.sha256()
+        lines = 0
+        last = b""
+        with open(data_path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                digest.update(chunk)
+                lines += chunk.count(b"\n")
+                last = chunk
+        if last and not last.endswith(b"\n"):
+            lines += 1
+        return digest.hexdigest(), max(lines - 1, 0)
+    except OSError as e:
+        logger.warning(f"Could not hash data file {data_path}: {e}")
+        return None, None
+
+
+def _str_or_none(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) else None
+
+
+def build_run_provenance(
+    code: str,
+    data_path: Optional[str],
+    llm_client: Any,
+    seed: Optional[int],
+    protocol: Any,
+    sandbox_used: bool,
+    *,
+    code_path: Optional[str] = None,
+    template: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Provenance record stored on every result row.
+
+    Captures what is needed to re-run a result: the code (hash and saved path),
+    the data file (hash and row count), the seed, the LLM and the environment.
+
+    Args:
+        code: The code that was executed
+        data_path: The dataset file, or None for runs without data
+        llm_client: The run's LLM client (model, provider_name, temperature_default)
+        seed: The run seed
+        protocol: The experiment protocol the code was generated from
+        sandbox_used: Whether the code ran in the Docker sandbox
+        code_path: Where the code was saved
+        template: The code template that produced the code; defaults to
+            protocol.template_name, else 'llm'
+    """
+    data_sha256, data_rows = _file_sha256_and_rows(data_path) if data_path else (None, None)
+    temperature = getattr(llm_client, "temperature_default", None)
+    # Only plain values: the record is stored as JSON
+    return {
+        "git_sha": get_git_sha(),
+        "model": _str_or_none(getattr(llm_client, "model", None)),
+        "provider": _str_or_none(getattr(llm_client, "provider_name", None)),
+        "temperature": float(temperature) if isinstance(temperature, (int, float)) else None,
+        "data_path": str(data_path) if data_path else None,
+        "data_sha256": data_sha256,
+        "data_rows": data_rows,
+        "code_sha256": hashlib.sha256(code.encode("utf-8")).hexdigest(),
+        "code_path": str(code_path) if code_path else None,
+        "template": _str_or_none(template) or _str_or_none(getattr(protocol, "template_name", None)) or "llm",
+        "seed": seed,
+        "sandbox_used": bool(sandbox_used),
+        "python_version": platform.python_version(),
+        "kosmos_version": _kosmos_version(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @dataclass

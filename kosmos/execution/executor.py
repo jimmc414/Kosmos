@@ -147,7 +147,9 @@ class ExecutionResult:
         error_type: Optional[str] = None,
         execution_time: float = 0.0,
         profile_result: Optional[Any] = None,  # ProfileResult from kosmos.core.profiling
-        data_source: Optional[str] = None  # 'file' or 'synthetic'
+        data_source: Optional[str] = None,  # 'file' or 'synthetic'
+        random_seed: Optional[int] = None,
+        sandbox_used: bool = False,
     ):
         self.success = success
         self.return_value = return_value
@@ -158,6 +160,8 @@ class ExecutionResult:
         self.execution_time = execution_time
         self.profile_result = profile_result
         self.data_source = data_source
+        self.random_seed = random_seed
+        self.sandbox_used = sandbox_used
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -170,6 +174,8 @@ class ExecutionResult:
             'error_type': self.error_type,
             'execution_time': self.execution_time,
             'data_source': self.data_source,
+            'random_seed': self.random_seed,
+            'sandbox_used': self.sandbox_used,
         }
 
         # Include profile data if available
@@ -613,7 +619,8 @@ class CodeExecutor:
             stderr=sandbox_result.stderr,
             error=sandbox_result.error,
             error_type=sandbox_result.error_type,
-            execution_time=sandbox_result.execution_time
+            execution_time=sandbox_result.execution_time,
+            sandbox_used=True,
         )
 
     def _prepare_globals(self) -> Dict[str, Any]:
@@ -663,7 +670,9 @@ class CodeExecutor:
         self,
         code: str,
         data_path: str,
-        retry_on_error: bool = False
+        retry_on_error: bool = False,
+        *,
+        seed: Optional[int] = None,
     ) -> ExecutionResult:
         """
         Execute code with data file path provided.
@@ -672,9 +681,11 @@ class CodeExecutor:
             code: Python code to execute (expects `data_path` variable)
             data_path: Path to data file (made available as variable)
             retry_on_error: If True, retry on errors
+            seed: When given, `random_seed` is defined and Python's and numpy's
+                global generators are seeded before the code runs
 
         Returns:
-            ExecutionResult
+            ExecutionResult, with random_seed set to seed
 
         Note:
             On the host path the data_path assignment is prepended to the code.
@@ -682,14 +693,28 @@ class CodeExecutor:
             container path instead.
         """
         local_vars = {'data_path': data_path}
+        if seed is not None:
+            code = seed_prelude(seed) + code
         if self.use_sandbox:
             # _execute_in_sandbox assigns data_path to the container mount; a host path
             # prepended here would override it and point at a file the container cannot see
-            return self.execute(code, local_vars, retry_on_error)
+            result = self.execute(code, local_vars, retry_on_error)
+        else:
+            # Prepend data_path assignment so templates can use it (Issue #51)
+            augmented_code = f"# Data path injected by executor\ndata_path = {repr(data_path)}\n\n{code}"
+            result = self.execute(augmented_code, local_vars, retry_on_error)
+        result.random_seed = seed
+        return result
 
-        # Prepend data_path assignment so templates can use it (Issue #51)
-        augmented_code = f"# Data path injected by executor\ndata_path = {repr(data_path)}\n\n{code}"
-        return self.execute(augmented_code, local_vars, retry_on_error)
+
+def seed_prelude(seed: int) -> str:
+    """Code that defines random_seed and seeds Python's and numpy's global generators."""
+    seed = int(seed)
+    return (
+        f"random_seed = {seed}\n"
+        "import random as _r; _r.seed(random_seed)\n"
+        "import numpy as _np; _np.random.seed(random_seed)\n"
+    )
 
 
 # Re-export CodeValidator from canonical safety module (F-22: removed duplicate)

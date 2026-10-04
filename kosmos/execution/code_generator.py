@@ -59,6 +59,15 @@ def _xy_columns(protocol: ExperimentProtocol) -> Tuple[str, str]:
     return (_variable_column(x) if x else 'x'), (_variable_column(y) if y else 'y')
 
 
+DEFAULT_SEED = 42
+
+
+def _protocol_seed(protocol: ExperimentProtocol) -> int:
+    """The protocol's random seed, or DEFAULT_SEED when it has none (0 is a valid seed)."""
+    seed = getattr(protocol, 'random_seed', None)
+    return DEFAULT_SEED if seed is None else int(seed)
+
+
 def _missing_columns_check(columns_expr: str) -> List[str]:
     """Generated lines that fail loudly when the loaded file lacks a required column."""
     return [
@@ -138,7 +147,7 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             groups = [levels[0], levels[1]]
 
         # Get random seed from protocol or use default
-        seed = getattr(protocol, 'random_seed', 42) or 42
+        seed = _protocol_seed(protocol)
         n_samples = 100  # Default sample size
 
         # Read effect size from protocol if available; default to 0.0 (null hypothesis)
@@ -273,6 +282,8 @@ class TTestComparisonCodeTemplate(CodeTemplate):
             "    'sample_size_adequate': len(df) >= 30,",
             "}",
             "",
+            f"result['random_seed'] = {seed}",
+            "",
             "# Return results for collection",
             "results = result"
         ]
@@ -316,7 +327,7 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
                 method = 'spearman'
                 break
 
-        seed = getattr(protocol, 'random_seed', 42) or 42
+        seed = _protocol_seed(protocol)
 
         code_lines = [
             "# Correlation Analysis",
@@ -440,6 +451,8 @@ class CorrelationAnalysisCodeTemplate(CodeTemplate):
             "    'sample_size_adequate': len(df) >= 30,",
             "}",
             "",
+            f"result['random_seed'] = {seed}",
+            "",
             "# Return results",
             "results = result"
         ]
@@ -470,7 +483,7 @@ class LogLogScalingCodeTemplate(CodeTemplate):
         """Generate log-log scaling analysis code."""
         x_var, y_var = _xy_columns(protocol)
 
-        seed = getattr(protocol, 'random_seed', 42) or 42
+        seed = _protocol_seed(protocol)
 
         code_lines = [
             "# Log-Log Scaling Analysis",
@@ -544,6 +557,8 @@ class LogLogScalingCodeTemplate(CodeTemplate):
             "    'sample_size_adequate': len(df) >= 30,",
             "}",
             "",
+            f"result['random_seed'] = {seed}",
+            "",
             "# Return results",
             "results = result"
         ]
@@ -575,6 +590,7 @@ class MLExperimentCodeTemplate(CodeTemplate):
         target_col = target_cols[0] if target_cols else None
         feature_cols = [v.column for v in protocol.get_independent_variables()
                         if v.column and v.column != target_col]
+        seed = _protocol_seed(protocol)
 
         code_lines = [
             "# Machine Learning Experiment",
@@ -606,7 +622,7 @@ class MLExperimentCodeTemplate(CodeTemplate):
             *["    " + line for line in _missing_columns_check("[_target_col] + _feature_cols")],
             "if df is None:",
             "    # Generate synthetic classification data",
-            "    X_syn, y_syn = make_classification(n_samples=200, n_features=10, random_state=42)",
+            f"    X_syn, y_syn = make_classification(n_samples=200, n_features=10, random_state={seed})",
             "    df = pd.DataFrame(X_syn, columns=[f'feature_{i}' for i in range(10)])",
             "    df['target'] = y_syn",
             "    _data_source = 'synthetic'",
@@ -621,7 +637,7 @@ class MLExperimentCodeTemplate(CodeTemplate):
             "",
             "# Train/test split, then 5-fold cross-validation (scikit-learn only, so the sandbox can run it)",
             "_pipeline = Pipeline([('scale', StandardScaler()), ('clf', LogisticRegression(max_iter=1000))])",
-            "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)",
+            f"X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state={seed})",
             "_pipeline.fit(X_train, y_train)",
             "_y_pred = _pipeline.predict(X_test)",
             "_cv_scores = cross_val_score(_pipeline, X, y, cv=5)",
@@ -647,6 +663,7 @@ class MLExperimentCodeTemplate(CodeTemplate):
             "",
             "# Propagate data source and assumption checks into results",
             "results['data_source'] = _data_source",
+            f"results['random_seed'] = {seed}",
             "results['assumption_checks'] = {",
             "    'normality_tested': False,",
             "    'sample_size_adequate': len(df) >= 30,",
@@ -687,7 +704,7 @@ class GenericComputationalCodeTemplate(CodeTemplate):
         """
         x_var, y_var = _xy_columns(protocol)
 
-        seed = getattr(protocol, 'random_seed', 42) or 42
+        seed = _protocol_seed(protocol)
 
         code_lines = [
             "# Computational Experiment Analysis",
@@ -837,6 +854,7 @@ class GenericComputationalCodeTemplate(CodeTemplate):
             "        results['p_value'] = float(_p_val)",
             "        results['effect_size'] = _ss_between / _ss_total if _ss_total > 0 else 0.0  # eta squared",
             "results['n'] = int(len(df))",
+            f"results['random_seed'] = {seed}",
             "",
             "# Assumption checks",
             "results['assumption_checks'] = {",
@@ -895,6 +913,9 @@ class ExperimentCodeGenerator:
         else:
             self.llm_client = llm_client if use_llm else None
 
+        # Name of the template that produced the last generate() output ('llm', 'basic')
+        self.last_template_name: Optional[str] = None
+
         # Initialize templates
         self.templates: List[CodeTemplate] = []
         if use_templates:
@@ -932,6 +953,7 @@ class ExperimentCodeGenerator:
         self._check_bindings(protocol, dataset_schema)
 
         code = None
+        self.last_template_name = None
 
         # Step 1: Try template matching
         if self.use_templates:
@@ -939,6 +961,7 @@ class ExperimentCodeGenerator:
             if template:
                 logger.info(f"Using template: {template.name}")
                 code = template.generate(protocol, dataset_schema=dataset_schema)
+                self.last_template_name = template.name
 
                 # Optionally enhance with LLM
                 if self.llm_enhance_templates and self.llm_client:
@@ -948,11 +971,14 @@ class ExperimentCodeGenerator:
         if code is None and self.use_llm:
             logger.info("No template matched, using LLM generation")
             code = self._generate_with_llm(protocol, dataset_schema)
+            if code is not None:
+                self.last_template_name = "llm"
 
         # Step 3: Fallback to basic template
         if code is None:
             logger.warning("No code generated, using basic template")
             code = self._generate_basic_template(protocol)
+            self.last_template_name = "basic"
 
         # Validate syntax
         self._validate_syntax(code)

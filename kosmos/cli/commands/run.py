@@ -62,6 +62,7 @@ def run_research(
     domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Research domain (biology, neuroscience, materials, etc.)"),
     max_iterations: int = typer.Option(10, "--max-iterations", "-i", help="Maximum number of research iterations"),
     budget: Optional[float] = typer.Option(None, "--budget", "-b", help="Budget limit in USD"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for the run (default: DEFAULT_RANDOM_SEED, 42)"),
     data_path: Optional[Path] = typer.Option(None, "--data-path", "-D", help="Path to CSV dataset for experiments"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable caching"),
     interactive: bool = typer.Option(False, "--interactive", help="Use interactive mode"),
@@ -214,6 +215,10 @@ def run_research(
 
             # Sandbox image for experiment execution
             "sandbox_image": config_obj.safety.sandbox_image,
+
+            # Reproducibility: one seed for the run; artifacts under <artifacts_dir>/<run_id>/
+            "random_seed": seed if seed is not None else config_obj.safety.default_random_seed,
+            "artifacts_dir": config_obj.research.artifacts_dir,
 
             # Interactive mode settings
             "auto_model_selection": auto_model_selection,

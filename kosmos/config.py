@@ -265,6 +265,11 @@ class ResearchConfig(BaseSettings):
         description="Maximum runtime in hours (paper claims up to 12 hours continuous operation)",
         alias="MAX_RUNTIME_HOURS"
     )
+    artifacts_dir: Optional[str] = Field(
+        default=None,
+        description="Directory for per-run artifacts (<dir>/<run_id>/code/...); None means <cwd>/artifacts/runs",
+        alias="KOSMOS_ARTIFACTS_DIR"
+    )
 
 
     model_config = SettingsConfigDict(populate_by_name=True)

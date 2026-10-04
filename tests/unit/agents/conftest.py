@@ -81,8 +81,11 @@ def in_memory_db():
 
 
 @pytest.fixture
-def db_director(in_memory_db):
-    """A director with a real ResearchPlan, a mocked workflow, and one seeded experiment."""
+def db_director(in_memory_db, tmp_path):
+    """A director with a real ResearchPlan, a mocked workflow, and one seeded experiment.
+
+    Run seed 7; artifacts go under tmp_path/artifacts.
+    """
     with patch('kosmos.agents.research_director.get_client') as mock_client, \
          patch('kosmos.agents.research_director.get_world_model') as mock_wm, \
          patch('kosmos.agents.research_director.SkillLoader') as mock_skills, \
@@ -95,7 +98,8 @@ def db_director(in_memory_db):
         d = ResearchDirectorAgent(
             research_question="Does CO2 predict temperature?",
             domain="climate",
-            config={"max_iterations": 10},
+            config={"max_iterations": 10, "random_seed": 7,
+                    "artifacts_dir": str(tmp_path / "artifacts")},
         )
 
         proto = _ttest_protocol()

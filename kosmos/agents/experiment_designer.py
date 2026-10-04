@@ -194,6 +194,7 @@ class ExperimentDesignerAgent(BaseAgent):
         store_in_db: bool = True,
         *,
         dataset_schema: Optional["DatasetSchema"] = None,
+        random_seed: Optional[int] = None,
     ) -> ExperimentDesignResponse:
         """
         Design an experimental protocol for a hypothesis.
@@ -208,6 +209,8 @@ class ExperimentDesignerAgent(BaseAgent):
             dataset_schema: Schema of the supplied dataset. When given, the
                 protocol is designed by the LLM (templates are skipped) and every
                 independent and dependent variable must bind to a real column.
+            random_seed: The run seed. When given it replaces any seed the
+                template or the LLM chose.
 
         Returns:
             ExperimentDesignResponse with protocol and metadata
@@ -259,6 +262,10 @@ class ExperimentDesignerAgent(BaseAgent):
         # Step 4: Enhance with LLM if enabled
         if self.use_llm_enhancement and self.use_templates and dataset_schema is None:
             protocol = self._enhance_protocol_with_llm(protocol, hypothesis)
+
+        # The run seed wins over a template default or an LLM-chosen seed
+        if random_seed is not None:
+            protocol.random_seed = random_seed
 
         # Step 4b: Power analysis — calculate required sample size
         try:

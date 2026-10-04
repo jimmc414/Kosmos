@@ -20,7 +20,9 @@ import concurrent.futures
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 from kosmos.agents.base import BaseAgent, AgentMessage, MessageType, AgentStatus
 from kosmos.utils.compat import model_to_dict
@@ -153,6 +155,17 @@ class ResearchDirectorAgent(BaseAgent):
         except Exception as e:
             logger.warning(f"Database initialization failed: {e}")
 
+        # One seed for the run: host generators now, protocols and generated code later
+        from kosmos.safety.reproducibility import ReproducibilityManager
+        seed = self.config.get("random_seed")
+        self.random_seed = 42 if seed is None else int(seed)
+        ReproducibilityManager(default_seed=self.random_seed).set_seed(self.random_seed)
+
+        # Run identity: tags result rows and names the artifacts directory
+        self.run_id = f"run_{uuid4().hex[:12]}"
+        self.artifacts_dir = Path(self.config.get("artifacts_dir") or Path.cwd() / "artifacts" / "runs")
+        self._record_research_session()
+
         # Agent registry (will be populated during coordination)
         self.agent_registry: Dict[str, str] = {}  # agent_type -> agent_id
 
@@ -276,6 +289,32 @@ class ResearchDirectorAgent(BaseAgent):
             f"ResearchDirector initialized for question: '{research_question}' "
             f"(max_iterations={self.max_iterations}, concurrent={self.enable_concurrent})"
         )
+
+    def _record_research_session(self) -> None:
+        """Store a ResearchSession row whose id is self.run_id. A DB failure only logs."""
+        from kosmos.db.operations import create_research_session
+        try:
+            with get_session() as session:
+                create_research_session(
+                    session,
+                    id=self.run_id,
+                    research_question=self.research_question,
+                    domain=self.domain or "general",
+                    max_iterations=self.max_iterations,
+                )
+        except Exception as e:
+            logger.warning(f"Could not record research session {self.run_id}: {e}")
+
+    def _save_run_code(self, result_id: str, code: str) -> Optional[Path]:
+        """Write executed code to <artifacts_dir>/<run_id>/code/<result_id>.py."""
+        code_path = self.artifacts_dir / self.run_id / "code" / f"{result_id}.py"
+        try:
+            code_path.parent.mkdir(parents=True, exist_ok=True)
+            code_path.write_text(code, encoding="utf-8")
+            return code_path
+        except OSError as e:
+            logger.warning(f"Could not save code for result {result_id}: {e}")
+            return None
 
     def _validate_domain(self):
         """Validate domain against enabled domains (Issue #51)."""
@@ -1518,6 +1557,7 @@ class ResearchDirectorAgent(BaseAgent):
                     hypothesis_id=hypothesis_id,
                     store_in_db=True,
                     dataset_schema=self.dataset_schema,
+                    random_seed=self.random_seed,
                 )
             except UnboundVariableError as unbound:
                 # Not an error: the hypothesis cannot be tested on this dataset.
@@ -1577,12 +1617,12 @@ class ResearchDirectorAgent(BaseAgent):
         Replicates the logic from _handle_executor_response().
         """
         from kosmos.execution.code_generator import ExperimentCodeGenerator
-        from kosmos.execution.executor import CodeExecutor, ExecutionResult
+        from kosmos.execution.executor import CodeExecutor, ExecutionResult, seed_prelude
         from kosmos.execution.data_provider import DataProvider
+        from kosmos.execution.provenance import build_run_provenance
         from kosmos.models.experiment import ExperimentProtocol
         from kosmos.db.operations import create_result, update_experiment_status
         from kosmos.db.models import ExperimentStatus
-        from uuid import uuid4
 
         try:
             # Lazy-init components
@@ -1632,10 +1672,13 @@ class ResearchDirectorAgent(BaseAgent):
                 )
             elif self.data_path:
                 exec_result = self._code_executor.execute_with_data(
-                    code, self.data_path, retry_on_error=True
+                    code, self.data_path, retry_on_error=True, seed=self.random_seed
                 )
             else:
-                exec_result = self._code_executor.execute(code, retry_on_error=True)
+                exec_result = self._code_executor.execute(
+                    seed_prelude(self.random_seed) + code, retry_on_error=True
+                )
+                exec_result.random_seed = self.random_seed
             success = bool(exec_result.success)
 
             # Track rollout (Issue #58)
@@ -1716,6 +1759,13 @@ class ResearchDirectorAgent(BaseAgent):
             # handler's except so no phantom result id reaches the research plan.
             result_id = str(uuid4())
             error_message = None if success else f"{exec_result.error_type}: {exec_result.error}"
+            code_path = self._save_run_code(result_id, code)
+            provenance = build_run_provenance(
+                code, self.data_path, self.llm_client, self.random_seed, protocol,
+                sandbox_used=exec_result.sandbox_used,
+                code_path=str(code_path) if code_path else None,
+                template=getattr(self._code_generator, "last_template_name", None),
+            )
             with get_session() as session:
                 create_result(
                     session,
@@ -1729,6 +1779,9 @@ class ResearchDirectorAgent(BaseAgent):
                     data_source=None if safe_data.get("data_source") is None else str(safe_data["data_source"]),
                     error_message=error_message,
                     code=code,
+                    run_id=self.run_id,
+                    random_seed=self.random_seed,
+                    provenance=provenance,
                 )
                 update_experiment_status(
                     session,
@@ -1826,6 +1879,9 @@ class ResearchDirectorAgent(BaseAgent):
                 protocol_id=db_r.experiment_id,
                 data_source=db_r.data_source,
                 random_seed=db_r.random_seed,
+                sandbox_used=bool((db_r.provenance or {}).get(
+                    "sandbox_used", (db_r.data or {}).get("executor_mode") == "sandbox"
+                )),
             ),
         )
 
