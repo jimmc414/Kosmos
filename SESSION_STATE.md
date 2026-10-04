@@ -13,11 +13,12 @@
      header; this comment quotes the headers and a substring search lands here. -->
 
 ## NEXT ACTION (rewritten s0, 2026-10-04)
-Resume Session 0 at step B3 (the register): write docs/execution/BACKLOG.md and
-docs/execution/backlog/*.md, then continue B4 (decision records), B5 (signals), B6
-(commands and hygiene), B7 (freeze docs/PLAN.md), B8 (final ladder, record, push). The
-Session 0 prompt is condensed in docs/process/INVENTORY_S0.md §0; steps B1 (ladder) and B2
-(this ledger) are committed. No plan item starts in Session 0.
+Owner: skim docs/PLAN.md §Locked decisions and §DoD; then the first /factory-continue pass takes
+VIAB#P2-4 (Opus, high). VIAB#P2-4 is milestone M1 of docs/PLAN.md (P2-4 Honest run report and
+real cost: a new kosmos/cli/commands/run_results.py, the results table in the CLI, per-result
+cost attribution, the cost field in record_api_call), verified by plan §8 step 14 and the
+ladder. Sessions s1–s3 are attended passes on Opus high (SESSION_STATE §STANDING "How the work
+reaches the queue"); FACTORY#runner waits for three green rows in the Session log.
 
 ## Waiting-on-owner (same ids as BACKLOG §OWNER; the sweep keys on this section)
 - `OWNER#compose-edit-approval` — P3-2 edits docker-compose.yml (healthcheck → `python -m kosmos.cli.main version`, drop the 8000:8000 mapping) on top of the owner's uncommitted hardening: approve the edit and its staging, or commit the hardening first — escalate-by S2 start (the session that reaches VIAB#P3-2) — NEW s0
@@ -44,10 +45,20 @@ PARKED (never started under the hold): (none)
 - **Last documentation-checklist run:** s0 2026-10-04 (B7 freeze; token in docs/MAP_CHANGELOG.md and docs/PLAN.md §Commit trail)
 
 ## Recent sessions (newest first; each block opens with `<!-- session s<N> -->`)
+<!-- session s0 -->
+### s0 — 2026-10-04 01:50 → 03:19:02 CDT (JUDGMENT Fable high; attended, owner present for Phase A) — Factory bootstrap: contract, map, ladder, ledger, register, ADRs, signals, commands, first freeze
+- signals: signals: 7 OK · tree 6M/18U
+- **What landed:** Phase A dc62f8a (process doc, CLAUDE.md contract merged over the existing rules, .claude/settings.json deny-list of 47 rules, docs/MAP.md S0–S4 + D-01..D-24 signed by the owner, docs/process/INVENTORY_S0.md with the four rulings verbatim) · B1 fee5198 (scripts/verify.sh 4 gates with RED/GREEN controls recorded in INVENTORY §B1; verify_isolate.py keeps the suite off kosmos.db, proven by md5 over three full runs; test baseline 394 ids and lint baseline 1 finding stamped with causes) · B2 df24d97 (this ledger; tracker frozen with a pointer header) · B3 123d17c (register: 10 VIAB in-plan rows, 3 FACTORY rows, 6 owner/decision asks, 9 TEST/HYG rows, 22 closed rows with hashes) · B4 51b48f7 (ADR-0001, ADR-0002) · B5 94f18b8 (signals: 7 checks + tree reading) · B6 a095809 (/factory-continue, /factory-spec, /factory-verify, /factory-queue; hot_files_check.sh; session_state_roll.py proven on a synthetic 14-block ledger; /next-plan-item → pointer) · B7 2600661 (docs/PLAN.md frozen: Lane 0 two owner triggers, M1–M10, F1–F2; DOC-CHECK token) · B8 this commit (S0 done, S1 active).
+- **Defaults taken:** un-ignored CLAUDE.md and .claude/settings.json in .gitignore (they were ignored; the contract must be tracked) · gate 1 lint limited to ruff E9/F63/F7/F82 against a baseline because the full rule set has 4,241 findings · gate 2's real-suite RED control deferred to FACTORY#ladder-gates (the judge's RED control proves the comparison) · M5 pre-split into M5a/M5b and M6 allowed to span sessions with shrinking baselines (PLAN §Locked decisions 5) · pre-factory tracker sessions logged as `pre-s0` rows · the process's rules 1–11 inherited into CLAUDE.md at adoption.
+- **Recorded, not fixed:** TEST#order-dependent-caplog, TEST#director-tests-write-configured-db, TEST#alembic-env-ignores-runtime-url, TEST#prioritizer-fixture-rationales, TEST#validation-pipeline-parametric-null, TEST#tier-c-shap-undefined-name, HYG#ruff-lint-debt, HYG#pyproject-ruff-top-level-keys, HYG#makefile-bare-pytest, OWNER#literature-cache-untrack (backlog/BUILD-open.md, OWNER-open.md). Prompt-fact correction: the tracker's 98+62 figure covers four directories; the ladder's full set is 285+107 (INVENTORY §9).
+- **Tests / verify:** `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (486 s)` 03:10:56 → 03:19:02 (second full run, on the finished tree at 2600661; first run 471 s at 03:00:09 → 03:08:00 on the B1 tree). Gate 2 red sets identical across all three full runs.
+- **Review:** SELF-REVIEW only (the one spawned agent measured the read ceiling). Findings fixed before commit: the plan's "no .dockerignore exists" claim was wrong (the file exists and its `.env.*` rule would drop .env.example; corrected in PLAN facts and M5a); the DOC-CHECK row's anchor count (26) is corrected to 24 in the changelog.
+- **Wrap:** clean.
 
 ## Session log (append-only; NEWEST FIRST; insert directly below the separator)
 | Date | Did | Commits | Verify |
 |---|---|---|---|
+| 2026-10-04 s0 | **Factory bootstrap complete (S0 → done, S1 → active; JUDGMENT Fable high, attended).** Contract, deny-list, map, inventory, 4-gate ladder with baselines, ledger, register, ADR-0001/0002, signals, commands, hygiene tools, docs/PLAN.md frozen for S1–S4; nine commits dc62f8a … (this one). Review: SELF-REVIEW only. | dc62f8a, fee5198, df24d97, 123d17c, 51b48f7, 94f18b8, a095809, 2600661, (hash: next session) | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (486 s)` 03:10:56 → 03:19:02 |
 | 2026-10-04 pre-s0 | **P2-3 done (`VIAB#P2-3` → done; Opus, attended, /next-plan-item).** --seed through director, designer, templates and executor; build_run_provenance on every result row; code saved under artifacts/runs/<run_id>/code; ResearchSession row per run. Regression agents/execution/core/cli/db/safety plus integration execution pipeline: no new failures against HEAD (128 failed, 99 errors pre-existing; two order-dependent caplog tests passed this time). No live call. | 1247379 | none (pre-factory; the item's acceptance tests, 22 passed) |
 | 2026-10-03 pre-s0 | **P2-2 done (`VIAB#P2-2` → done; Opus, attended).** analysis_fn.py recomputation, permutation null on the real data via shuffle_target, provider-agnostic fail-closed ScholarEval as advisory, verdict rule. Regression: no new failures against HEAD (100 failed, 74 errors pre-existing). Owner asked to commit and push at the end of every session; skill and ground rules updated; branch pushed. | 43dbf18, 1ad249e | none (pre-factory; 33 acceptance tests) |
 | 2026-10-03 pre-s0 | **P2-1 done (`VIAB#P2-1` → done; Opus, attended).** data_schema.py, Variable.column, designer binding with UnboundVariableError, untestable_hypotheses, bound code templates; host executor fixes for dir() and split namespaces. Regression: no new failures against HEAD (105 failed, 63 errors pre-existing). | 8026985 | none (pre-factory; 23 acceptance tests) |
