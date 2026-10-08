@@ -101,7 +101,10 @@ turn to wait; wait inside it. Never match a process by a pattern this prompt con
   Plan line numbers are exact at 6cfe7f6 only; locate targets by the quoted code.
 - Tests: `python -m pytest <paths> --no-cov -p no:cacheprovider -q`. NEVER bare `pytest` (80 %
   coverage gate, warnings-as-errors, tests/conftest.py loads .env so tests/e2e makes live calls).
-  tests/e2e is never in the ladder.
+  tests/e2e is never in the ladder. Ad-hoc runs that must not touch kosmos.db:
+  `VERIFY_RUN_DIR=/tmp/kosmos-verify/adhoc PYTHONPATH=scripts python -m pytest <paths> -p verify_isolate --no-cov -p no:cacheprovider -q`.
+- .gitignore negates `/CLAUDE.md` and `.claude/settings.json`; if a `git add` of either is refused as
+  ignored, the negation was lost: restore it, never `git add -f`.
 - Match the surrounding code: imports in stdlib / third-party / kosmos blocks;
   `logger = logging.getLogger(__name__)`; `datetime.now(timezone.utc)`; absolute `kosmos.*` imports.
 

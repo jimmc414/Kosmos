@@ -91,5 +91,4 @@ PARKED (never started under the hold): (none)
 | 2026-10-02 pre-s0 | **P0-1 through P1-5, P0-CHECK, A-1, A-2 done (tracker rows 1–14 → done; Opus, attended).** Tracker and /next-plan-item skill created. Live step 5 run after P1-5: exit 0, 101 provider calls, $0.0155, budget armed; zero hypotheses (novelty filter, moved P2-5 to the front of P2). A-1 live subscription smoke test passed ($0.077 API-equivalent). | ec6ed67 … 3e3b80b (17 commits) | none (pre-factory; per-item acceptance tests; two live DeepSeek runs and one Claude smoke test) |
 
 ## Fresh traps (graduate to CLAUDE.md at a stage gate, then delete here)
-- (s0) CLAUDE.md and .claude/*.json were gitignored, so the contract was never tracked before s0; `.gitignore` now negates `/CLAUDE.md` and `.claude/settings.json`. If a `git add` of either is refused as ignored again, the negation was lost: restore it, never `-f`.
-- (s0) tests/conftest.py loads .env with override=True at import; any test run outside the ladder's `-p verify_isolate` plugin writes ResearchSession rows into the owner's kosmos.db. Run ad-hoc tests as `VERIFY_RUN_DIR=/tmp/kosmos-verify/adhoc PYTHONPATH=scripts python -m pytest <paths> -p verify_isolate --no-cov -p no:cacheprovider -q`.
+(none; the two s0 traps graduated to CLAUDE.md §STANDING TRAPS at the S1 gate, s2)
