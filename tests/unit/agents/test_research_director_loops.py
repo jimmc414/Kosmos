@@ -350,6 +350,7 @@ class TestRefinementDuplicateFilter:
             operations.create_result(
                 session, id="res-dup-1", experiment_id=EXP_ID,
                 data={"execution_success": True}, p_value=0.01,
+                validation_status="validated",  # P2-7: variants spawn only from validated results
             )
         db_director.workflow.current_state = WorkflowState.REFINING
 
@@ -382,6 +383,139 @@ class TestRefinementDuplicateFilter:
             assert operations.get_hypothesis(session, "var-new") is not None
         assert "var-dup" not in db_director.research_plan.hypothesis_pool
         assert "var-new" in db_director.research_plan.hypothesis_pool
+
+
+class TestPoolControlPieces:
+    """P2-7: scores, inheritance, the backlog cap, the refinement limit, the REFINING exit."""
+
+    def test_score_is_mean_of_testability_and_novelty(self):
+        assert ResearchDirectorAgent._hypothesis_score(
+            Mock(testability_score=0.8, novelty_score=0.4)
+        ) == pytest.approx(0.6)
+        assert ResearchDirectorAgent._hypothesis_score(
+            Mock(testability_score=None, novelty_score=None)
+        ) is None
+
+    def test_full_backlog_designs_instead_of_generating(self, db_director):
+        from kosmos.core.workflow import ResearchPlan, ResearchWorkflow
+
+        db_director.research_plan = ResearchPlan(research_question="q")
+        db_director.workflow = ResearchWorkflow(
+            initial_state=WorkflowState.GENERATING_HYPOTHESES, research_plan=db_director.research_plan
+        )
+        for i in range(4):
+            db_director.research_plan.add_hypothesis(f"h{i}")
+
+        assert db_director.decide_next_action() == NextAction.DESIGN_EXPERIMENT
+        assert db_director.workflow.current_state == WorkflowState.DESIGNING_EXPERIMENTS
+
+    def test_refining_after_a_pass_leaves_instead_of_refining_again(self, db_director):
+        from kosmos.core.workflow import ResearchWorkflow
+
+        db_director.research_plan.mark_tested("hyp-exec-1")
+        db_director.research_plan.add_hypothesis("h-untested")
+        db_director.workflow = ResearchWorkflow(
+            initial_state=WorkflowState.REFINING, research_plan=db_director.research_plan
+        )
+        assert db_director.decide_next_action() == NextAction.REFINE_HYPOTHESIS
+
+        db_director._refined_since_analysis = True  # the pass ran and failed inside REFINING
+        assert db_director.decide_next_action() == NextAction.DESIGN_EXPERIMENT
+        assert db_director.workflow.current_state == WorkflowState.DESIGNING_EXPERIMENTS
+
+    @staticmethod
+    def _seed_validated_result(rid):
+        from kosmos.db import get_session, operations
+        from tests.unit.agents.conftest import EXP_ID
+
+        with get_session() as session:
+            operations.create_result(
+                session, id=rid, experiment_id=EXP_ID, data={"execution_success": True},
+                execution_success=True, data_source="file", p_value=0.01,
+                validation_status="validated",
+            )
+
+    async def test_variant_inherits_score_and_generation(self, db_director):
+        from kosmos.core.workflow import ResearchPlan
+        from kosmos.hypothesis.refiner import RetirementDecision
+        from kosmos.models.hypothesis import Hypothesis
+        from tests.unit.agents.conftest import H_ID
+
+        self._seed_validated_result("res-inherit-1")
+        db_director.research_plan = ResearchPlan(research_question="q")
+        db_director.research_plan.add_hypothesis(H_ID, score=0.8, generation=1)
+        db_director.research_plan.mark_tested(H_ID)
+        db_director.workflow.current_state = WorkflowState.REFINING
+        variant = Hypothesis(
+            id="var-inherit", research_question="Does CO2 predict temperature?",
+            statement="Volcanic aerosol index lowers the temperature anomaly a year later",
+            rationale="Sulphate aerosols reflect sunlight", domain="climate",
+        )
+        db_director._hypothesis_refiner = Mock(
+            evaluate_hypothesis_status=Mock(return_value=RetirementDecision.SPAWN_VARIANT),
+            spawn_variant=Mock(return_value=[variant]),
+        )
+
+        with patch.object(db_director, '_is_near_duplicate', return_value=False):
+            await db_director._handle_refine_hypothesis_action(H_ID)
+
+        plan = db_director.research_plan
+        assert "var-inherit" in plan.hypothesis_pool
+        assert plan.hypothesis_scores["var-inherit"] == pytest.approx(0.72)
+        assert plan.hypothesis_generation["var-inherit"] == 2
+
+    async def test_refinements_stop_at_the_limit(self, db_director):
+        from kosmos.hypothesis.refiner import RetirementDecision
+        from tests.unit.agents.conftest import H_ID
+
+        self._seed_validated_result("res-limit-1")
+        db_director.research_plan.mark_tested(H_ID)
+        db_director._hypothesis_refiner = Mock(
+            evaluate_hypothesis_status=Mock(return_value=RetirementDecision.CONTINUE_TESTING)
+        )
+
+        for _ in range(4):
+            await db_director._handle_refine_hypothesis_action(H_ID)
+
+        assert db_director._hypothesis_refiner.evaluate_hypothesis_status.call_count == 2
+
+    async def test_no_variants_from_a_rejected_result(self, db_director):
+        from kosmos.db import get_session, operations
+        from kosmos.hypothesis.refiner import RetirementDecision
+        from tests.unit.agents.conftest import EXP_ID, H_ID
+
+        with get_session() as session:
+            operations.create_result(
+                session, id="res-rejected-1", experiment_id=EXP_ID, data={"execution_success": True},
+                execution_success=True, data_source="file", p_value=0.4,
+                validation_status="rejected",
+            )
+        db_director.research_plan.mark_tested(H_ID)
+        db_director._hypothesis_refiner = Mock(
+            evaluate_hypothesis_status=Mock(return_value=RetirementDecision.SPAWN_VARIANT)
+        )
+
+        await db_director._handle_refine_hypothesis_action(H_ID)
+
+        db_director._hypothesis_refiner.evaluate_hypothesis_status.assert_called_once()
+        db_director._hypothesis_refiner.spawn_variant.assert_not_called()
+
+    async def test_no_variants_at_the_pool_cap(self, db_director):
+        from kosmos.hypothesis.refiner import RetirementDecision
+        from tests.unit.agents.conftest import H_ID
+
+        self._seed_validated_result("res-cap-1")
+        db_director.research_plan.mark_tested(H_ID)
+        for i in range(11):
+            db_director.research_plan.add_hypothesis(f"filler-{i}")
+        db_director._hypothesis_refiner = Mock(
+            evaluate_hypothesis_status=Mock(return_value=RetirementDecision.SPAWN_VARIANT)
+        )
+
+        await db_director._handle_refine_hypothesis_action(H_ID)
+
+        db_director._hypothesis_refiner.spawn_variant.assert_not_called()
+        assert len(db_director.research_plan.hypothesis_pool) == 12
 
 
 class TestErrorRecoveryInEventLoop:

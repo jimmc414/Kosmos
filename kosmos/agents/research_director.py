@@ -184,6 +184,16 @@ class ResearchDirectorAgent(BaseAgent):
         self._protocol_cost: Dict[str, float] = {}
         self._result_cost: Dict[str, float] = {}
 
+        # Hypothesis-pool control: caps, variant count and refinement limit per hypothesis
+        self.max_hypothesis_pool = self.config.get("max_hypothesis_pool", 12)
+        self.max_untested_backlog = self.config.get("max_untested_backlog", 4)
+        self.num_variants = self.config.get("num_variants", 1)
+        self.max_refinements_per_hypothesis = self.config.get("max_refinements_per_hypothesis", 2)
+        self._refinement_counts: Dict[str, int] = {}
+        self._variants_dropped_duplicate = 0
+        self._last_generation_count: Optional[int] = None  # None until the first generation
+        self._refined_since_analysis = False
+
         # Message correlation tracking
         self.pending_requests: Dict[str, Dict[str, Any]] = {}  # correlation_id -> request_info
 
@@ -1501,11 +1511,18 @@ class ResearchDirectorAgent(BaseAgent):
             if self._hypothesis_agent is None:
                 self._hypothesis_agent = HypothesisGeneratorAgent(config=self.config)
 
+            with self._research_plan_context():
+                capacity = self.max_hypothesis_pool - len(self.research_plan.hypothesis_pool)
+            if capacity <= 0:
+                logger.info(f"Hypothesis pool at its cap ({self.max_hypothesis_pool}); not generating")
+                self._last_generation_count = 0
+                return
+
             logger.info("Generating hypotheses via direct call (bypassing message router)")
 
             response = self._hypothesis_agent.generate_hypotheses(
                 research_question=self.research_question,
-                num_hypotheses=self.config.get("num_hypotheses", 3),
+                num_hypotheses=min(self.config.get("num_hypotheses", 3), capacity),
                 domain=self.domain,
                 store_in_db=True,
                 dataset_context=self.dataset_schema.to_prompt_block() if self.dataset_schema else None,
@@ -1514,8 +1531,15 @@ class ResearchDirectorAgent(BaseAgent):
             # Track rollout (Issue #58)
             self.rollout_tracker.increment("hypothesis_generation")
 
-            hypothesis_ids = [h.id for h in response.hypotheses]
+            hypotheses = list(response.hypotheses)
+            if len(hypotheses) > capacity:
+                logger.info(
+                    f"Generator returned {len(hypotheses)} hypotheses; keeping {capacity} under the pool cap"
+                )
+                hypotheses = hypotheses[:capacity]
+            hypothesis_ids = [h.id for h in hypotheses]
             count = len(hypothesis_ids)
+            self._last_generation_count = count
 
             logger.info(f"Generated {count} hypotheses via direct call")
 
@@ -1524,8 +1548,8 @@ class ResearchDirectorAgent(BaseAgent):
 
             # Update research plan (thread-safe)
             with self._research_plan_context():
-                for hyp_id in hypothesis_ids:
-                    self.research_plan.add_hypothesis(hyp_id)
+                for hyp in hypotheses:
+                    self.research_plan.add_hypothesis(hyp.id, score=self._hypothesis_score(hyp))
 
             # Persist hypotheses to knowledge graph
             for hyp_id in hypothesis_ids:
@@ -1553,6 +1577,18 @@ class ResearchDirectorAgent(BaseAgent):
                 recoverable=True,
                 error_details={"hypothesis_count_before": len(self.research_plan.hypothesis_pool)}
             )
+
+    @staticmethod
+    def _hypothesis_score(hypothesis) -> Optional[float]:
+        """Priority score 0.5 * testability + 0.5 * novelty; None when neither is known."""
+        def _score(name):
+            value = getattr(hypothesis, name, None)
+            return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+        testability, novelty = _score("testability_score"), _score("novelty_score")
+        if testability is None and novelty is None:
+            return None
+        return 0.5 * (testability or 0.0) + 0.5 * (novelty or 0.0)
 
     async def _handle_design_experiment_action(self, hypothesis_id: str):
         """
@@ -2144,7 +2180,8 @@ class ResearchDirectorAgent(BaseAgent):
                     effect_size=effect_size,
                 )
 
-            # Transition to refining state (thread-safe)
+            # Transition to refining state (thread-safe); one refinement pass follows
+            self._refined_since_analysis = False
             with self._workflow_context():
                 self.workflow.transition_to(
                     WorkflowState.REFINING,
@@ -2223,6 +2260,7 @@ class ResearchDirectorAgent(BaseAgent):
         from kosmos.models.hypothesis import Hypothesis as PydanticHypothesis
         from kosmos.models.result import ExperimentResult, ResultStatus, ExecutionMetadata
 
+        self._refined_since_analysis = True
         try:
             # Lazy-init refiner
             if self._hypothesis_refiner is None:
@@ -2233,6 +2271,7 @@ class ResearchDirectorAgent(BaseAgent):
             # Load hypothesis from DB
             pydantic_hyp = None
             results_history = []
+            validation_statuses = []  # aligned with results_history
 
             with get_session() as session:
                 db_hyp = db_get_hypothesis(session, hypothesis_id, with_experiments=True)
@@ -2259,6 +2298,7 @@ class ResearchDirectorAgent(BaseAgent):
                         for db_r in db_results:
                             try:
                                 results_history.append(self._db_result_to_experiment_result(db_r))
+                                validation_statuses.append(db_r.validation_status)
                             except Exception as conv_err:
                                 logger.warning(f"Failed to convert result {db_r.id}: {conv_err}")
 
@@ -2274,13 +2314,35 @@ class ResearchDirectorAgent(BaseAgent):
                 self._leave_refining()
                 return
 
-            # Evaluate hypothesis status
-            decision = self._hypothesis_refiner.evaluate_hypothesis_status(
-                pydantic_hyp, latest_result, results_history
-            )
+            # Evaluate hypothesis status, unless the latest result cannot inform it (no LLM call)
+            latest_validation = validation_statuses[-1]
+            refinements = self._refinement_counts.get(hypothesis_id, 0)
+            if latest_result.status == ResultStatus.FAILED or latest_validation in (
+                "unvalidated", "rejected_unsafe"
+            ):
+                logger.info(
+                    f"Not refining {hypothesis_id}: latest result "
+                    f"{'failed' if latest_result.status == ResultStatus.FAILED else latest_validation}"
+                )
+                decision = RetirementDecision.CONTINUE_TESTING
+            elif refinements >= self.max_refinements_per_hypothesis:
+                logger.info(
+                    f"Not refining {hypothesis_id}: {refinements} refinements "
+                    f"(limit {self.max_refinements_per_hypothesis})"
+                )
+                decision = RetirementDecision.CONTINUE_TESTING
+            else:
+                self._refinement_counts[hypothesis_id] = refinements + 1
+                decision = self._hypothesis_refiner.evaluate_hypothesis_status(
+                    pydantic_hyp, latest_result, results_history
+                )
 
             refined_ids = []
             retired_ids = []
+            with self._research_plan_context():
+                capacity = self.max_hypothesis_pool - len(self.research_plan.hypothesis_pool)
+                parent_score = self.research_plan.hypothesis_scores.get(hypothesis_id)
+                child_generation = self.research_plan.hypothesis_generation.get(hypothesis_id, 0) + 1
 
             if decision == RetirementDecision.RETIRE:
                 self._hypothesis_refiner.retire_hypothesis(
@@ -2288,6 +2350,9 @@ class ResearchDirectorAgent(BaseAgent):
                 )
                 retired_ids.append(hypothesis_id)
                 logger.info(f"Retired hypothesis {hypothesis_id}")
+
+            elif decision == RetirementDecision.REFINE and capacity <= 0:
+                logger.info(f"Not refining {hypothesis_id}: hypothesis pool at its cap")
 
             elif decision == RetirementDecision.REFINE:
                 refined = self._hypothesis_refiner.refine_hypothesis(pydantic_hyp, latest_result)
@@ -2310,12 +2375,24 @@ class ResearchDirectorAgent(BaseAgent):
                     refined_ids.append(refined.id)
                     logger.info(f"Refined hypothesis {hypothesis_id} -> {refined.id}")
 
+            elif decision == RetirementDecision.SPAWN_VARIANT and latest_validation != "validated":
+                logger.info(f"No variants from {hypothesis_id}: latest result is {latest_validation}")
+
+            elif decision == RetirementDecision.SPAWN_VARIANT and capacity <= 0:
+                logger.info(f"No variants from {hypothesis_id}: hypothesis pool at its cap")
+
             elif decision == RetirementDecision.SPAWN_VARIANT:
                 variants = self._hypothesis_refiner.spawn_variant(
-                    pydantic_hyp, latest_result, num_variants=2
+                    pydantic_hyp, latest_result, num_variants=min(self.num_variants, capacity)
                 )
                 for variant in variants:
-                    if variant and variant.id and not self._is_near_duplicate(variant):
+                    if len(refined_ids) >= capacity:
+                        break
+                    if not (variant and variant.id):
+                        continue
+                    if self._is_near_duplicate(variant):
+                        self._variants_dropped_duplicate += 1
+                    else:
                         try:
                             with get_session() as session:
                                 db_create_hypothesis(
@@ -2341,10 +2418,13 @@ class ResearchDirectorAgent(BaseAgent):
             # Reset error streak on success
             self._reset_error_streak()
 
-            # Add refined hypotheses to pool (thread-safe)
+            # Add refined hypotheses to pool (thread-safe); they inherit 0.9 x the parent score
+            child_score = parent_score * 0.9 if parent_score is not None else None
             with self._research_plan_context():
                 for hyp_id in refined_ids:
-                    self.research_plan.add_hypothesis(hyp_id)
+                    self.research_plan.add_hypothesis(
+                        hyp_id, score=child_score, generation=child_generation
+                    )
 
             # Persist refined hypotheses to knowledge graph
             for hyp_id in refined_ids:
@@ -2879,7 +2959,16 @@ Provide a structured, actionable plan in 2-3 paragraphs.
 
         # State-based decision making
         if current_state == WorkflowState.GENERATING_HYPOTHESES:
-            # Generate hypotheses
+            # Test the backlog before generating more once it, or the pool, is full
+            untested = self.research_plan.get_untested_hypotheses()
+            pool_size = len(self.research_plan.hypothesis_pool)
+            if len(untested) >= self.max_untested_backlog or pool_size >= self.max_hypothesis_pool:
+                with self._workflow_context():
+                    self.workflow.transition_to(
+                        WorkflowState.DESIGNING_EXPERIMENTS,
+                        action=f"Pool control: {len(untested)} untested, pool {pool_size}"
+                    )
+                return NextAction.DESIGN_EXPERIMENT
             return NextAction.GENERATE_HYPOTHESIS
 
         elif current_state == WorkflowState.DESIGNING_EXPERIMENTS:
@@ -2929,11 +3018,13 @@ Provide a structured, actionable plan in 2-3 paragraphs.
             return NextAction.ANALYZE_RESULT
 
         elif current_state == WorkflowState.REFINING:
-            # Refine hypotheses based on results
-            if self.research_plan.tested_hypotheses:
+            # One refinement pass per analyzed result; the pass leaves REFINING itself
+            # (_leave_refining). Still here afterwards (the pass failed): leave now.
+            if self.research_plan.tested_hypotheses and not self._refined_since_analysis:
                 return NextAction.REFINE_HYPOTHESIS
-            else:
-                return NextAction.GENERATE_HYPOTHESIS
+            untested = self.research_plan.get_untested_hypotheses()
+            self._leave_refining()
+            return NextAction.DESIGN_EXPERIMENT if untested else NextAction.GENERATE_HYPOTHESIS
 
         elif current_state == WorkflowState.CONVERGED:
             return NextAction.CONVERGE
@@ -3178,10 +3269,28 @@ Provide a structured, actionable plan in 2-3 paragraphs.
 
         untested = self.research_plan.get_untested_hypotheses()
         if not untested and not self.research_plan.experiment_queue:
+            if self._can_grow_pool():
+                logger.debug("No untested hypotheses; the pool can still grow, not converging")
+                return False
             logger.info("No untested hypotheses and no queued experiments")
             return True
 
         return False
+
+    def _can_grow_pool(self) -> bool:
+        """True while refinement or generation may still add hypotheses to test.
+
+        Holds in REFINING and GENERATING_HYPOTHESES while the pool is under
+        max_hypothesis_pool and the last generation was not empty.
+        """
+        return (
+            self.workflow.current_state in {
+                WorkflowState.REFINING,
+                WorkflowState.GENERATING_HYPOTHESES,
+            }
+            and len(self.research_plan.hypothesis_pool) < self.max_hypothesis_pool
+            and self._last_generation_count != 0
+        )
 
     # ========================================================================
     # STRATEGY ADAPTATION
@@ -3344,6 +3453,9 @@ Provide a structured, actionable plan in 2-3 paragraphs.
             "hypotheses_rejected": len(self.research_plan.rejected_hypotheses),
             "experiments_completed": len(self.research_plan.completed_experiments),
             "results_count": len(self.research_plan.results),
+            "untested_backlog": len(self.research_plan.get_untested_hypotheses()),
+            "untestable": len(self.research_plan.untestable_hypotheses),
+            "variants_dropped_duplicate": self._variants_dropped_duplicate,
             "strategy_stats": self.strategy_stats,
             "rollouts": self.rollout_tracker.to_dict(),  # Issue #58
             "agent_status": self.get_status()

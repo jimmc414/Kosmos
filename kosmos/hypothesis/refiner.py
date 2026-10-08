@@ -157,7 +157,9 @@ class HypothesisRefiner:
             # Rejected but not enough to retire - should refine
             return RetirementDecision.REFINE
         elif result.supports_hypothesis is None:
-            # Inconclusive - spawn variant to explore
+            # Inconclusive: explore variants only when the experiment itself succeeded
+            if result.status != ResultStatus.SUCCESS:
+                return RetirementDecision.CONTINUE_TESTING
             return RetirementDecision.SPAWN_VARIANT
         else:
             # Supported - continue testing or spawn variants to explore related ideas

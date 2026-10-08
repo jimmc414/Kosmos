@@ -71,6 +71,9 @@ class ResearchPlan(BaseModel):
     rejected_hypotheses: List[str] = Field(default_factory=list)
     # Hypotheses whose variables bind to no dataset column; never designed again
     untestable_hypotheses: List[str] = Field(default_factory=list)
+    # Priority score (0.5 testability + 0.5 novelty; variants 0.9 x parent) and lineage depth
+    hypothesis_scores: Dict[str, float] = Field(default_factory=dict)
+    hypothesis_generation: Dict[str, int] = Field(default_factory=dict)
 
     # Experiment tracking
     experiment_queue: List[str] = Field(default_factory=list)  # Protocol IDs
@@ -99,10 +102,15 @@ class ResearchPlan(BaseModel):
         """Update the updated_at timestamp."""
         self.updated_at = datetime.now(timezone.utc)
 
-    def add_hypothesis(self, hypothesis_id: str):
-        """Add hypothesis to pool."""
+    def add_hypothesis(
+        self, hypothesis_id: str, score: Optional[float] = None, generation: int = 0
+    ):
+        """Add hypothesis to pool with its priority score (None = unscored) and generation."""
         if hypothesis_id not in self.hypothesis_pool:
             self.hypothesis_pool.append(hypothesis_id)
+            if score is not None:
+                self.hypothesis_scores[hypothesis_id] = score
+            self.hypothesis_generation[hypothesis_id] = generation
             self.update_timestamp()
 
     def mark_tested(self, hypothesis_id: str):
@@ -155,11 +163,16 @@ class ResearchPlan(BaseModel):
         self.update_timestamp()
 
     def get_untested_hypotheses(self) -> List[str]:
-        """Get list of hypotheses that haven't been tested and can be tested."""
-        return [
+        """Get hypotheses that haven't been tested and can be tested.
+
+        Ordered by score descending, then insertion order; unscored ids come last.
+        """
+        untested = [
             h for h in self.hypothesis_pool
             if h not in self.tested_hypotheses and h not in self.untestable_hypotheses
         ]
+        scores = self.hypothesis_scores
+        return sorted(untested, key=lambda h: (h not in scores, -scores.get(h, 0.0)))
 
     def get_testability_rate(self) -> float:
         """Calculate ratio of tested to total hypotheses."""

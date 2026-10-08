@@ -282,6 +282,28 @@ class TestRetirementDecisionRuleBased:
 # Test Class 3: Bayesian Retirement
 # ============================================================================
 
+class TestInconclusiveResultDecision:
+    """P2-7: an inconclusive result spawns variants only when the experiment succeeded."""
+
+    def test_inconclusive_success_spawns_variant(
+        self, refiner, sample_hypothesis, sample_inconclusive_result
+    ):
+        decision = refiner.evaluate_hypothesis_status(
+            hypothesis=sample_hypothesis, result=sample_inconclusive_result, results_history=[],
+        )
+
+        assert decision == RetirementDecision.SPAWN_VARIANT
+
+    def test_inconclusive_failure_continues_testing(
+        self, refiner, sample_hypothesis, sample_failed_result
+    ):
+        decision = refiner.evaluate_hypothesis_status(
+            hypothesis=sample_hypothesis, result=sample_failed_result, results_history=[],
+        )
+
+        assert decision == RetirementDecision.CONTINUE_TESTING
+
+
 class TestRetirementDecisionBayesian:
     """Test Bayesian confidence-based retirement decisions."""
 
