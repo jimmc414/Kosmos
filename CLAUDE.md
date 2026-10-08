@@ -18,8 +18,9 @@ its `## Gotchas` section and its Change Impact Index for the files your mileston
 - Do not include "Generated with Claude Code" attribution
 - Commits should appear as the repository owner
 - Subject: `s<N> — <milestone id>: <imperative summary>` (Session 0 steps: `s0 — <step>: <summary>`).
-  One commit per milestone. Stage by explicit path. Never force-push. Push the branch at the end of
-  every session: `git push -u origin viability-fixes`. Stay on `viability-fixes`.
+  One commit per milestone. Stage by explicit path. Never force-push. Push right after EVERY
+  commit (owner, 2026-10-08), and again at session end: `git push -u origin viability-fixes`.
+  Stay on `viability-fixes`.
 
 ## ON SESSION START — AUTONOMOUS MODE
 0. Run `bash scripts/signals_check.sh` (read-only, under 60 s). rc 0 = OK · 2 = a RED · 1 = could
