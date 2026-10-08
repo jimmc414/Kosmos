@@ -42,6 +42,7 @@ from kosmos.cli.utils import (
     format_timestamp,
     create_status_text,
 )
+from kosmos.cli.commands.run_results import build_run_results
 from kosmos.cli.interactive import run_interactive_mode
 from kosmos.cli.views.results_viewer import ResultsViewer
 from kosmos.core.stage_tracker import get_stage_tracker
@@ -252,6 +253,7 @@ def run_research(
         viewer.display_research_overview(results)
         viewer.display_hypotheses_table(results.get("hypotheses", []))
         viewer.display_experiments_table(results.get("experiments", []))
+        viewer.display_results_table(results.get("results", []))
 
         if "metrics" in results:
             viewer.display_metrics_summary(results["metrics"])
@@ -472,66 +474,7 @@ async def run_with_progress_async(
             progress.update(execution_task, completed=100)
             progress.update(analysis_task, completed=100)
 
-            # Get final research status
-            final_status = director.get_research_status()
-
-            # Build results from actual research
-            # Fetch actual hypothesis and experiment objects from database
-            from kosmos.db import get_session
-            from kosmos.db.operations import get_hypothesis, get_experiment
-
-            hypotheses_data = []
-            experiments_data = []
-
-            try:
-                # Check if research_plan exists
-                if not director.research_plan:
-                    logger.warning("No research plan available")
-                    hypotheses_data = []
-                    experiments_data = []
-                else:
-                    with get_session() as session:
-                        # Fetch hypotheses from database using IDs
-                        if hasattr(director.research_plan, 'hypothesis_pool') and director.research_plan.hypothesis_pool:
-                            for h_id in director.research_plan.hypothesis_pool:
-                                hypothesis = get_hypothesis(session, h_id)
-                                if hypothesis:
-                                    hypotheses_data.append(hypothesis.to_dict() if hasattr(hypothesis, 'to_dict') else str(hypothesis))
-
-                        # Fetch experiments from database using IDs
-                        if hasattr(director.research_plan, 'completed_experiments') and director.research_plan.completed_experiments:
-                            for e_id in director.research_plan.completed_experiments:
-                                experiment = get_experiment(session, e_id)
-                                if experiment:
-                                    experiments_data.append(experiment.to_dict() if hasattr(experiment, 'to_dict') else str(experiment))
-            except Exception as e:
-                logger.warning(f"Could not fetch all objects from database: {e}")
-                # Fallback: use IDs as strings
-                hypotheses_data = list(director.research_plan.hypothesis_pool)
-                experiments_data = list(director.research_plan.completed_experiments)
-
-            results = {
-                "id": f"research_{int(time.time())}",
-                "question": question,
-                "domain": final_status.get("domain") or "auto",
-                "state": final_status.get("workflow_state", "COMPLETED"),
-                "current_iteration": final_status.get("iteration", 0),
-                "max_iterations": max_iterations,
-                "has_converged": final_status.get("has_converged", False),
-                "convergence_reason": final_status.get("convergence_reason"),
-                "hypotheses": hypotheses_data,
-                "experiments": experiments_data,
-                "metrics": {
-                    "api_calls": getattr(director.llm_client, 'total_requests', 0),
-                    "cache_hits": getattr(director.llm_client, 'cache_hits', 0),
-                    "cache_misses": getattr(director.llm_client, 'cache_misses', 0),
-                    "hypotheses_generated": final_status.get("hypothesis_pool_size", 0),
-                    "hypotheses_tested": final_status.get("hypotheses_tested", 0),
-                    "hypotheses_supported": final_status.get("hypotheses_supported", 0),
-                    "hypotheses_rejected": final_status.get("hypotheses_rejected", 0),
-                    "experiments_executed": final_status.get("experiments_completed", 0),
-                },
-            }
+            results = build_run_results(director, question, max_iterations)
 
             # Stop streaming display if enabled
             if streaming_display:

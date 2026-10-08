@@ -129,6 +129,7 @@ class MetricsCollector:
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_api_duration = 0.0
+        self.total_cost_usd = 0.0
         self.api_call_history: List[Dict[str, Any]] = []
 
         # Experiment metrics
@@ -179,10 +180,11 @@ class MetricsCollector:
         input_tokens: int,
         output_tokens: int,
         duration_seconds: float,
-        success: bool = True
+        success: bool = True,
+        cost_usd: Optional[float] = None,
     ):
         """
-        Record Claude API call.
+        Record an LLM API call.
 
         Args:
             model: Model used
@@ -190,6 +192,7 @@ class MetricsCollector:
             output_tokens: Output tokens
             duration_seconds: Call duration
             success: Whether call succeeded
+            cost_usd: Cost the provider reported; None or 0.0 prices the call by its model
         """
         with self._lock:
             self.api_calls += 1
@@ -199,6 +202,7 @@ class MetricsCollector:
             self.total_input_tokens += input_tokens
             self.total_output_tokens += output_tokens
             self.total_api_duration += duration_seconds
+            self.total_cost_usd += _call_cost(model, input_tokens, output_tokens, cost_usd)
 
             # Store in history
             self.api_call_history.append({
@@ -207,7 +211,8 @@ class MetricsCollector:
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "duration_seconds": duration_seconds,
-                "success": success
+                "success": success,
+                "cost_usd": cost_usd,
             })
 
             # Keep history limited to last 1000 calls
@@ -227,13 +232,6 @@ class MetricsCollector:
             error_rate = (self.api_errors / self.api_calls
                         if self.api_calls > 0 else 0)
 
-            # Estimate cost using canonical pricing (default Sonnet)
-            total_cost = get_model_cost(
-                "claude-sonnet-4-5",
-                self.total_input_tokens,
-                self.total_output_tokens
-            )
-
             return {
                 "total_calls": self.api_calls,
                 "successful_calls": self.api_calls - self.api_errors,
@@ -244,7 +242,7 @@ class MetricsCollector:
                 "total_tokens": self.total_input_tokens + self.total_output_tokens,
                 "total_duration_seconds": self.total_api_duration,
                 "average_duration_seconds": avg_duration,
-                "estimated_cost_usd": total_cost,
+                "estimated_cost_usd": self.total_cost_usd,
             }
 
     # ========================================================================
@@ -754,12 +752,13 @@ class MetricsCollector:
             if datetime.fromisoformat(call["timestamp"]) >= period_start
         ]
 
-        # Price each call by the model that served it
+        # The cost the provider reported, else priced by the model that served the call
         return sum(
-            get_model_cost(
-                call.get("model") or "claude-sonnet-4-5",
+            _call_cost(
+                call.get("model"),
                 call.get("input_tokens", 0),
                 call.get("output_tokens", 0),
+                call.get("cost_usd"),
             )
             for call in period_calls
         )
@@ -916,6 +915,20 @@ class MetricsCollector:
         """Reset all metrics (useful for testing)."""
         with self._lock:
             self.__init__()
+
+
+def _call_cost(
+    model: Optional[str], input_tokens: int, output_tokens: int, cost_usd: Optional[float]
+) -> float:
+    """Cost of one call: the stored cost_usd, else get_model_cost for its model.
+
+    A stored 0.0 is priced by model too: providers report 0.0 when the backend
+    returned no cost (ClaudeCodeProvider), and the budget must not miss that spend.
+    Free local models price at 0.0 through the pricing table.
+    """
+    if cost_usd:
+        return cost_usd
+    return get_model_cost(str(model or "claude-sonnet-4-5"), input_tokens, output_tokens)
 
 
 # Singleton metrics collector

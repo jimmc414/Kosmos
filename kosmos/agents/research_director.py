@@ -180,6 +180,10 @@ class ResearchDirectorAgent(BaseAgent):
         self._novelty_checker = None
         self._sandbox_error: Optional[str] = None
 
+        # LLM cost attributed per experiment (design) and per result (design, execute, analyze)
+        self._protocol_cost: Dict[str, float] = {}
+        self._result_cost: Dict[str, float] = {}
+
         # Message correlation tracking
         self.pending_requests: Dict[str, Dict[str, Any]] = {}  # correlation_id -> request_info
 
@@ -315,6 +319,20 @@ class ResearchDirectorAgent(BaseAgent):
         except OSError as e:
             logger.warning(f"Could not save code for result {result_id}: {e}")
             return None
+
+    def _llm_cost_total(self) -> Optional[float]:
+        """The provider's cumulative cost in USD, or None when it does not report one."""
+        cost = getattr(self.llm_client, "total_cost_usd", None)
+        if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+            return None
+        return float(cost)
+
+    def _llm_cost_since(self, start: Optional[float]) -> Optional[float]:
+        """LLM cost spent since a _llm_cost_total() snapshot; None when unknown."""
+        now = self._llm_cost_total()
+        if start is None or now is None:
+            return None
+        return max(now - start, 0.0)
 
     def _validate_domain(self):
         """Validate domain against enabled domains (Issue #51)."""
@@ -1545,6 +1563,7 @@ class ResearchDirectorAgent(BaseAgent):
         """
         from kosmos.agents.experiment_designer import ExperimentDesignerAgent, UnboundVariableError
 
+        cost_start = self._llm_cost_total()
         try:
             # Lazy-init the agent
             if self._experiment_designer is None:
@@ -1581,6 +1600,9 @@ class ResearchDirectorAgent(BaseAgent):
             if protocol_id:
                 with self._research_plan_context():
                     self.research_plan.add_experiment(protocol_id)
+                design_cost = self._llm_cost_since(cost_start)
+                if design_cost is not None:
+                    self._protocol_cost[protocol_id] = design_cost
 
             # Persist protocol to knowledge graph
             if protocol_id and hypothesis_id:
@@ -1624,6 +1646,7 @@ class ResearchDirectorAgent(BaseAgent):
         from kosmos.db.operations import create_result, update_experiment_status
         from kosmos.db.models import ExperimentStatus
 
+        cost_start = self._llm_cost_total()
         try:
             # Lazy-init components
             if self._code_generator is None:
@@ -1766,6 +1789,10 @@ class ResearchDirectorAgent(BaseAgent):
                 code_path=str(code_path) if code_path else None,
                 template=getattr(self._code_generator, "last_template_name", None),
             )
+            design_cost = self._protocol_cost.pop(protocol_id, None)
+            execute_cost = self._llm_cost_since(cost_start)
+            if design_cost is not None or execute_cost is not None:
+                self._result_cost[result_id] = (design_cost or 0.0) + (execute_cost or 0.0)
             with get_session() as session:
                 create_result(
                     session,
@@ -1782,6 +1809,7 @@ class ResearchDirectorAgent(BaseAgent):
                     run_id=self.run_id,
                     random_seed=self.random_seed,
                     provenance=provenance,
+                    cost_usd=self._result_cost.get(result_id),
                 )
                 update_experiment_status(
                     session,
@@ -1972,6 +2000,7 @@ class ResearchDirectorAgent(BaseAgent):
         from kosmos.models.result import ExperimentResult, ResultStatus, ExecutionMetadata
         from kosmos.models.hypothesis import Hypothesis as PydanticHypothesis
 
+        cost_start = self._llm_cost_total()
         try:
             # Lazy-init the agent
             if self._data_analyst is None:
@@ -2061,6 +2090,9 @@ class ResearchDirectorAgent(BaseAgent):
                 update_result_analysis, update_result_validation, update_hypothesis_status,
             )
             from kosmos.db.models import HypothesisStatus as DBHypothesisStatus
+            analyze_cost = self._llm_cost_since(cost_start)
+            if analyze_cost is not None:
+                self._result_cost[result_id] = self._result_cost.get(result_id, 0.0) + analyze_cost
             with get_session() as session:
                 update_result_analysis(
                     session, result_id,
@@ -2072,6 +2104,7 @@ class ResearchDirectorAgent(BaseAgent):
                     session, result_id, validation_status,
                     detail=validation_detail,
                     supports_hypothesis=hypothesis_supported,
+                    cost_usd=self._result_cost.get(result_id),
                 )
                 if hypothesis_id:
                     update_hypothesis_status(

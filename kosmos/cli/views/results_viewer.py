@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 from rich.panel import Panel
 from rich.tree import Tree
@@ -24,7 +25,6 @@ from kosmos.cli.utils import (
     create_table,
     format_timestamp,
     format_duration,
-    format_currency,
     truncate_text,
     create_status_text,
     create_domain_text,
@@ -107,8 +107,8 @@ class ResultsViewer:
             table.add_row(
                 str(i),
                 claim,
-                create_metric_text(novelty, format_type="number"),
-                create_metric_text(priority, format_type="number"),
+                _score_text(novelty),
+                _score_text(priority),
                 create_status_text(status),
             )
 
@@ -210,6 +210,47 @@ class ResultsViewer:
         self.console.print(table)
         self.console.print()
 
+    def display_results_table(self, results: List[Dict[str, Any]]):
+        """
+        Display one row per experiment result: execution, data source, test and verdict.
+
+        Args:
+            results: Result dictionaries from build_run_results
+        """
+        if not results:
+            self.console.print("[muted]No results yet.[/muted]")
+            return
+
+        table = create_table(
+            title=f"{get_icon('success')} Results",
+            columns=["Result", "Hyp", "Exec", "Data", "Test", "Stat", "p", "Verdict", "Validation"],
+            show_lines=False,
+        )
+
+        for res in results:
+            failed = res.get("execution_success") is not True
+            validation = res.get("validation_status") or "-"
+            if res.get("validation_reason"):
+                validation = f"{validation} ({res['validation_reason']})"
+            if failed and res.get("error_message"):
+                validation = f"{validation}: {_one_line(res['error_message'])[:60]}"
+
+            row = [
+                (res.get("result_id") or "")[:8],
+                (res.get("hypothesis_id") or "-")[:8],
+                "FAIL" if failed else "OK",
+                res.get("data_source") or "none",
+                res.get("test_type") or "-",
+                _num(res.get("statistic"), "{:.4g}"),
+                _num(res.get("p_value"), "{:.3g}"),
+                _verdict(res.get("supports_hypothesis")),
+                validation,
+            ]
+            table.add_row(*(escape(str(cell)) for cell in row), style="red" if failed else None)
+
+        self.console.print(table)
+        self.console.print()
+
     def display_experiment_details(self, experiment: Dict[str, Any]):
         """
         Display detailed view of a single experiment.
@@ -278,18 +319,24 @@ class ResultsViewer:
             show_lines=True,
         )
 
-        api_calls = metrics.get("api_calls", 0)
-        cache_hits = metrics.get("cache_hits", 0)
-        cache_misses = metrics.get("cache_misses", 0)
-        total_cache = cache_hits + cache_misses
-        hit_rate = (cache_hits / total_cache * 100) if total_cache > 0 else 0
+        api_table.add_row("Total API Calls", str(metrics.get("api_calls", 0)))
+        if "cache_hits" in metrics or "cache_misses" in metrics:
+            cache_hits = metrics.get("cache_hits", 0)
+            cache_misses = metrics.get("cache_misses", 0)
+            total_cache = cache_hits + cache_misses
+            hit_rate = (cache_hits / total_cache * 100) if total_cache > 0 else 0
+            api_table.add_row("Cache Hits", f"{cache_hits} ({hit_rate:.1f}%)")
+            api_table.add_row("Cache Misses", str(cache_misses))
 
-        api_table.add_row("Total API Calls", str(api_calls))
-        api_table.add_row("Cache Hits", f"{cache_hits} ({hit_rate:.1f}%)")
-        api_table.add_row("Cache Misses", str(cache_misses))
-
-        if "total_cost_usd" in metrics:
-            api_table.add_row("Total Cost", format_currency(metrics["total_cost_usd"]))
+        api_table.add_row("Total Cost", _cost(metrics.get("total_cost_usd")))
+        api_table.add_row(
+            "Tokens (in / out)",
+            f"{metrics.get('input_tokens', 0)} / {metrics.get('output_tokens', 0)}",
+        )
+        if "cost_per_validated_finding" in metrics:
+            api_table.add_row(
+                "Cost per Validated Finding", _cost(metrics.get("cost_per_validated_finding"))
+            )
 
         self.console.print(api_table)
         self.console.print()
@@ -302,9 +349,16 @@ class ResultsViewer:
         )
 
         research_table.add_row("Hypotheses Generated", str(metrics.get("hypotheses_generated", 0)))
-        research_table.add_row("Experiments Executed", str(metrics.get("experiments_executed", 0)))
-        research_table.add_row("Successful Experiments", str(metrics.get("successful_experiments", 0)))
-        research_table.add_row("Failed Experiments", str(metrics.get("failed_experiments", 0)))
+        research_table.add_row("Hypotheses Untestable", str(metrics.get("hypotheses_untestable", 0)))
+        research_table.add_row("Experiments Attempted", str(metrics.get("experiments_attempted", 0)))
+        research_table.add_row("Experiments Succeeded", str(metrics.get("experiments_succeeded", 0)))
+        research_table.add_row("Experiments Failed", str(metrics.get("experiments_failed", 0)))
+        research_table.add_row(
+            "Results (file / synthetic)",
+            f"{metrics.get('results_from_file', 0)} / {metrics.get('results_synthetic', 0)}",
+        )
+        research_table.add_row("Findings Validated", str(metrics.get("findings_validated", 0)))
+        research_table.add_row("Findings Rejected", str(metrics.get("findings_rejected", 0)))
 
         self.console.print(research_table)
         self.console.print()
@@ -349,8 +403,8 @@ class ResultsViewer:
                 lines.extend([
                     f"### {i}. {hyp.get('claim', 'Unknown')}",
                     f"",
-                    f"- **Novelty:** {hyp.get('novelty_score', 0):.2f}",
-                    f"- **Priority:** {hyp.get('priority_score', 0):.2f}",
+                    f"- **Novelty:** {_num(hyp.get('novelty_score'), '{:.2f}')}",
+                    f"- **Priority:** {_num(hyp.get('priority_score'), '{:.2f}')}",
                     f"- **Status:** {hyp.get('status', 'Unknown')}",
                     "",
                 ])
@@ -369,12 +423,83 @@ class ResultsViewer:
                     "",
                 ])
 
+            lines.extend([
+                "## Results",
+                "",
+                "| Result | Hyp | Exec | Data | Test | Stat | p | Verdict | Validation | Cost |",
+                "|---|---|---|---|---|---|---|---|---|---|",
+            ])
+            for res in data.get("results", []):
+                failed = res.get("execution_success") is not True
+                validation = res.get("validation_status") or "-"
+                if res.get("validation_reason"):
+                    validation = f"{validation} ({res['validation_reason']})"
+                if failed and res.get("error_message"):
+                    validation = f"{validation}: {_one_line(res['error_message'])[:60]}"
+                lines.append(
+                    f"| {(res.get('result_id') or '')[:8]} | {(res.get('hypothesis_id') or '-')[:8]} "
+                    f"| {'FAIL' if failed else 'OK'} | {res.get('data_source') or 'none'} "
+                    f"| {res.get('test_type') or '-'} | {_num(res.get('statistic'), '{:.4g}')} "
+                    f"| {_num(res.get('p_value'), '{:.3g}')} | {_verdict(res.get('supports_hypothesis'))} "
+                    f"| {validation.replace('|', '/')} | {_cost(res.get('cost_usd'))} |"
+                )
+
+            metrics = data.get("metrics", {})
+            if metrics:
+                lines.extend([
+                    "",
+                    "## Metrics",
+                    "",
+                    f"- **API calls:** {metrics.get('api_calls', 0)}",
+                    f"- **Total cost:** {_cost(metrics.get('total_cost_usd'))}",
+                    f"- **Tokens (in / out):** {metrics.get('input_tokens', 0)} / {metrics.get('output_tokens', 0)}",
+                    f"- **Experiments succeeded / failed:** "
+                    f"{metrics.get('experiments_succeeded', 0)} / {metrics.get('experiments_failed', 0)}",
+                    f"- **Findings validated / rejected:** "
+                    f"{metrics.get('findings_validated', 0)} / {metrics.get('findings_rejected', 0)}",
+                    f"- **Cost per validated finding:** {_cost(metrics.get('cost_per_validated_finding'))}",
+                    f"- **Hypotheses untestable:** {metrics.get('hypotheses_untestable', 0)}",
+                ])
+
             with open(output_path, "w") as f:
                 f.write("\n".join(lines))
 
             self.console.print(f"[success]Exported to {output_path}[/success]")
         except Exception as e:
             self.console.print(f"[error]Export failed: {str(e)}[/error]")
+
+
+def _num(value: Any, fmt: str) -> str:
+    """Format a number, or '-' when it is missing."""
+    if value is None or isinstance(value, bool):
+        return "-"
+    try:
+        return fmt.format(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _one_line(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def _score_text(value: Any) -> Text:
+    if value is None:
+        return Text("-", style="muted")
+    return create_metric_text(value, format_type="number")
+
+
+def _cost(value: Any) -> str:
+    """Cost in USD with four decimals (LLM runs often cost cents), or '-' when unknown."""
+    return _num(value, "${:.4f}")
+
+
+def _verdict(supports: Optional[bool]) -> str:
+    if supports is True:
+        return "supports"
+    if supports is False:
+        return "refutes"
+    return "inconclusive"
 
 
 # Convenience functions
@@ -385,6 +510,7 @@ def view_research_results(research_data: Dict[str, Any]):
     viewer.display_research_overview(research_data)
     viewer.display_hypotheses_table(research_data.get("hypotheses", []))
     viewer.display_experiments_table(research_data.get("experiments", []))
+    viewer.display_results_table(research_data.get("results", []))
 
     if "metrics" in research_data:
         viewer.display_metrics_summary(research_data["metrics"])

@@ -361,8 +361,10 @@ evaluation reports.
 ## Commit trail (append during execution)
 | Commit | Milestone | Delivered |
 |---|---|---|
-| (hash: next session) | freeze | docs/PLAN.md frozen s0 2026-10-04 · DOC-CHECK run: ADR-0001, ADR-0002 lint A1–A7 pass · MAP_CHANGELOG references resolve · every anchor above dated 2026-10-04 · findings: none |
+| 2600661 | freeze | docs/PLAN.md frozen s0 2026-10-04 · DOC-CHECK run: ADR-0001, ADR-0002 lint A1–A7 pass · MAP_CHANGELOG references resolve · every anchor above dated 2026-10-04 · findings: none |
+| `s1 — P2-4:` (2026-10-08) | M1 | VIAB#P2-4: kosmos/cli/commands/run_results.py build_run_results (columns, not repr strings; usage from get_usage_stats); results table and metrics in the viewer and both exports; per-result cost through create_result and update_result_validation; record_api_call cost_usd with a running total. Plan §8 step 14 green (13 passed) |
 
 ## Operational learnings (append during execution; graduate keepers)
 - (s0) The judge prints "retired" ids whenever a baseline test starts passing; after M3, M4 and
   each M6 part this list is long and is the expected evidence, not noise.
+- (s1, M1) A plan §8 verify command is a bare pytest run: it loads .env and reaches the configured DB. Any test in it that constructs a ResearchDirectorAgent must use an in-memory DB fixture, or it writes a ResearchSession row into kosmos.db. Checked by md5 of kosmos.db around the step-14 run.

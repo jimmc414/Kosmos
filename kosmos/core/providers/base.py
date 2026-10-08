@@ -410,6 +410,7 @@ class LLMProvider(ABC):
                 output_tokens=usage.output_tokens,
                 duration_seconds=0.0,
                 success=True,
+                cost_usd=usage.cost_usd,
             )
         except Exception as e:
             logger.debug(f"Metrics recording skipped: {e}")
