@@ -11,6 +11,7 @@ Enhanced version of code validation with:
 import ast
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -90,7 +91,7 @@ class CodeValidator:
         guidelines = []
 
         # Try to load from file
-        if path and Path(path).exists():
+        if isinstance(path, (str, os.PathLike)) and Path(path).exists():
             try:
                 with open(path, 'r') as f:
                     data = json.load(f)

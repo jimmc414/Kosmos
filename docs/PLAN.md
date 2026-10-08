@@ -153,6 +153,16 @@ the 29 guardrails tests pass unmodified — they are in scripts/test_baseline.tx
 show as "retired" in the judge output; that is the expected evidence, not a red.
 *Verify:* `python -m pytest tests/unit/safety --no-cov -p no:cacheprovider -q` → exit 0 (29 + 4
 new) (plan §8 step 18); ladder green.
+*Amended s3 (CLAUDE.md §AMENDMENT):* step 18 cannot exit 0 at M3. tests/unit/safety also holds
+27 baseline reds outside P3-1's files: test_verifier.py, 26 errors (its fixture builds
+ExecutionMetadata without duration_seconds, python_version and platform), and
+test_reproducibility.py::TestConsistencyValidation::test_validate_different_types, 1 failure (int −
+str in validate_consistency). M3's verify is therefore test_guardrails.py (29) + the 4 new tests
+passing, with those 27 ids unchanged. Step 18's exit 0 moves to M6, which fixes every remaining
+baseline id (TEST#safety-suite-baseline-reds). The S2 exit gate is unchanged. Plan §5 P3-1 says
+the 29 tests are fixed by its step (2); they also need the guardrails' numeric config reads to
+tolerate the tests' Mock config (max_cpu_cores is a Mock), and a cwd-isolating
+tests/unit/safety/conftest.py, because the tests leave the stop flag file in the cwd.
 *DoD:* as M1, for `VIAB#P3-1`.
 
 ### M4 — P3-4 Archive zero-importer modules (Tiers A and B; Tier C kept) — BUILD·high — M — closes `VIAB#P3-4`
@@ -364,9 +374,11 @@ evaluation reports.
 | 2600661 | freeze | docs/PLAN.md frozen s0 2026-10-04 · DOC-CHECK run: ADR-0001, ADR-0002 lint A1–A7 pass · MAP_CHANGELOG references resolve · every anchor above dated 2026-10-04 · findings: none |
 | `s1 — P2-4:` (2026-10-08) | M1 | VIAB#P2-4: kosmos/cli/commands/run_results.py build_run_results (columns, not repr strings; usage from get_usage_stats); results table and metrics in the viewer and both exports; per-result cost through create_result and update_result_validation; record_api_call cost_usd with a running total. Plan §8 step 14 green (13 passed) |
 | `s2 — P2-7:` (2026-10-08) | M2 | VIAB#P2-7: pool caps (max_hypothesis_pool 12, max_untested_backlog 4, num_variants 1, max_refinements_per_hypothesis 2); ResearchPlan.hypothesis_scores/hypothesis_generation with score-ordered untested ids; refinement skips failed/unvalidated/rejected_unsafe results without an LLM call, spawns variants only from validated results, counts variants_dropped_duplicate; REFINING leaves after one pass per analysis; the empty-backlog convergence waits while the pool can grow. Plan §8 step 17 green (2 passed; pool peak 12 over 52 actions to convergence) |
+| `s3 — P3-1:` (2026-10-08) | M3 | VIAB#P3-1: SafetyIncident.violation optional; CodeValidator path guard; guardrails signal handlers default off, main thread only, chained to the previous handler (SIG_DFL re-delivered); numeric config reads tolerate a Mock config; director validates generated code after an emergency-stop check, stores unsafe code as a rejected_unsafe result (experiment FAILED, off the queue, ANALYZING) and never executes it; analysis keeps rejected_unsafe without an LLM call; guardrails limits into the sandbox config; execute_protocol_code builds guardrails without signal handlers. 29 guardrails tests + 4 new pass (step 18 exit 0 moved to M6, see the M3 amendment) |
 
 ## Operational learnings (append during execution; graduate keepers)
 - (s0) The judge prints "retired" ids whenever a baseline test starts passing; after M3, M4 and
   each M6 part this list is long and is the expected evidence, not noise.
 - (s1, M1) A plan §8 verify command is a bare pytest run: it loads .env and reaches the configured DB. Any test in it that constructs a ResearchDirectorAgent must use an in-memory DB fixture, or it writes a ResearchSession row into kosmos.db. Checked by md5 of kosmos.db around the step-14 run.
 - (s2, M2) Plan §5 P2-7 (3)'s REFINING clause read literally ("return DESIGN_EXPERIMENT when untested exist, else GENERATE_HYPOTHESIS") would never refine, and its acceptance test needs refinement; it applies once the pass has run (`_refined_since_analysis`). Plan §5 P1-2's risk note is the other half: with no untested work the run converged before a second generation round, so the empty-backlog convergence now waits while the pool is under its cap and the last generation was not empty (`_can_grow_pool`).
+- (s3, M3) Tests that exercise SafetyGuardrails write `.kosmos_emergency_stop` and safety_incidents.jsonl into the cwd. A flag file left in the repo root makes every later run (and the director) refuse to execute. tests/unit/safety/conftest.py runs each test in tmp_path; any new test that triggers an emergency stop must chdir the same way. Check `ls .kosmos_emergency_stop` in the repo root after a ladder run.

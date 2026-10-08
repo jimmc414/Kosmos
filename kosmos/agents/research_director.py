@@ -178,6 +178,8 @@ class ResearchDirectorAgent(BaseAgent):
         self._data_analyst = None
         self._hypothesis_refiner = None
         self._novelty_checker = None
+        self._code_validator = None
+        self._guardrails = None
         self._sandbox_error: Optional[str] = None
 
         # LLM cost attributed per experiment (design) and per result (design, execute, analyze)
@@ -1667,6 +1669,74 @@ class ResearchDirectorAgent(BaseAgent):
                 error_details={"untested_hypotheses": len(self.research_plan.get_untested_hypotheses())}
             )
 
+    @staticmethod
+    def _sandbox_limits(limits) -> Dict[str, Any]:
+        """DockerSandbox keyword arguments for a guardrails ResourceLimit (unset limits are left out)."""
+        kwargs: Dict[str, Any] = {}
+        if limits.max_memory_mb is not None:
+            kwargs['memory_limit'] = f"{int(limits.max_memory_mb)}m"
+        if limits.max_execution_time_seconds is not None:
+            kwargs['timeout'] = int(limits.max_execution_time_seconds)
+        if limits.max_cpu_cores is not None:
+            kwargs['cpu_limit'] = float(limits.max_cpu_cores)
+        return kwargs
+
+    def _record_unsafe_code(self, protocol_id: str, protocol, code: str, report, cost_start) -> None:
+        """Store generated code that failed CodeValidator as a rejected_unsafe result, without running it.
+
+        The experiment leaves the queue as failed and the workflow moves to ANALYZING,
+        where the result is recorded without an LLM call.
+        """
+        from kosmos.execution.provenance import build_run_provenance
+        from kosmos.db.operations import create_result, update_experiment_status
+        from kosmos.db.models import ExperimentStatus
+
+        error_message = "; ".join(v.message for v in report.violations)
+        logger.warning(f"Code for experiment {protocol_id} rejected as unsafe, not executed: {error_message}")
+
+        result_id = str(uuid4())
+        code_path = self._save_run_code(result_id, code)
+        provenance = build_run_provenance(
+            code, self.data_path, self.llm_client, self.random_seed, protocol,
+            sandbox_used=False,
+            code_path=str(code_path) if code_path else None,
+            template=getattr(self._code_generator, "last_template_name", None),
+        )
+        design_cost = self._protocol_cost.pop(protocol_id, None)
+        execute_cost = self._llm_cost_since(cost_start)
+        if design_cost is not None or execute_cost is not None:
+            self._result_cost[result_id] = (design_cost or 0.0) + (execute_cost or 0.0)
+        with get_session() as session:
+            create_result(
+                session,
+                id=result_id,
+                experiment_id=protocol_id,
+                data={},
+                execution_success=False,
+                data_source=None,
+                validation_status="rejected_unsafe",
+                error_message=error_message,
+                code=code,
+                run_id=self.run_id,
+                random_seed=self.random_seed,
+                provenance=provenance,
+                cost_usd=self._result_cost.get(result_id),
+            )
+            update_experiment_status(
+                session, protocol_id, ExperimentStatus.FAILED, error_message=error_message,
+            )
+
+        with self._research_plan_context():
+            self.research_plan.add_result(result_id)
+            if protocol_id in self.research_plan.experiment_queue:
+                self.research_plan.experiment_queue.remove(protocol_id)
+
+        with self._workflow_context():
+            self.workflow.transition_to(
+                WorkflowState.ANALYZING,
+                action=f"Analyze result {result_id} (code rejected as unsafe)"
+            )
+
     async def _handle_execute_experiment_action(self, protocol_id: str):
         """
         Handle EXECUTE_EXPERIMENT action by running code generation + execution directly.
@@ -1681,17 +1751,26 @@ class ResearchDirectorAgent(BaseAgent):
         from kosmos.models.experiment import ExperimentProtocol
         from kosmos.db.operations import create_result, update_experiment_status
         from kosmos.db.models import ExperimentStatus
+        from kosmos.safety.code_validator import CodeValidator
+        from kosmos.safety.guardrails import SafetyGuardrails
 
         cost_start = self._llm_cost_total()
         try:
             # Lazy-init components
             if self._code_generator is None:
                 self._code_generator = ExperimentCodeGenerator(use_templates=True, use_llm=True)
+            if self._code_validator is None:
+                self._code_validator = CodeValidator(allow_file_read=True)
+            if self._guardrails is None:
+                self._guardrails = SafetyGuardrails(enable_signal_handlers=False)
             if self._code_executor is None:
                 try:
                     self._code_executor = CodeExecutor(
                         max_retries=3,
-                        sandbox_config={'image': self.config.get('sandbox_image', 'kosmos-sandbox:latest')},
+                        sandbox_config={
+                            'image': self.config.get('sandbox_image', 'kosmos-sandbox:latest'),
+                            **self._sandbox_limits(self._guardrails.enforce_resource_limits()),
+                        },
                     )
                 except RuntimeError as sandbox_err:  # DockerSandbox() failed: daemon unreachable
                     logger.error(
@@ -1723,6 +1802,14 @@ class ResearchDirectorAgent(BaseAgent):
 
             # Generate code from protocol
             code = self._code_generator.generate(protocol, dataset_schema=self.dataset_schema)
+
+            # Nothing runs under an emergency stop or when the code fails the safety check
+            if self._guardrails.sync_from_flag_file():
+                raise RuntimeError("emergency stop active")
+            report = self._code_validator.validate(code, context={'protocol': protocol.name})
+            if not report.passed:
+                self._record_unsafe_code(protocol_id, protocol, code, report, cost_start)
+                return
 
             # Execute code
             if self._code_executor is None:
@@ -2071,6 +2158,8 @@ class ResearchDirectorAgent(BaseAgent):
                     data_source=db_result.data_source,
                     statistical_tests=dict(db_result.statistical_tests or {}),
                     random_seed=db_result.random_seed,
+                    validation_status=db_result.validation_status,
+                    error_message=db_result.error_message,
                 )
 
                 # Load hypothesis if available
@@ -2085,8 +2174,15 @@ class ResearchDirectorAgent(BaseAgent):
                             domain=db_hyp.domain or self.domain or "general",
                         )
 
-            # A failed execution has nothing to interpret; record it without an LLM call
-            if pydantic_result.status == ResultStatus.FAILED:
+            # A failed execution has nothing to interpret; record it without an LLM call.
+            # Code rejected as unsafe never ran and keeps its rejected_unsafe status.
+            if pydantic_result.status == ResultStatus.FAILED and row.validation_status == "rejected_unsafe":
+                supported, confidence = None, 0.0
+                summary = f"Code rejected as unsafe, not executed: {row.error_message}"
+                key_findings = []
+                validation_status = "rejected_unsafe"
+                validation_detail = {"reason": "execution_failed", "rejected_unsafe": True}
+            elif pydantic_result.status == ResultStatus.FAILED:
                 _d = pydantic_result.raw_data
                 supported, confidence = None, 0.0
                 summary = f"Execution failed: {_d.get('error_type')}: {_d.get('error')}"

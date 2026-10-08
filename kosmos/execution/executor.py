@@ -1096,7 +1096,7 @@ def execute_protocol_code(
     # Check SafetyGuardrails emergency stop before execution
     try:
         from kosmos.safety.guardrails import SafetyGuardrails
-        guardrails = SafetyGuardrails()
+        guardrails = SafetyGuardrails(enable_signal_handlers=False)
         guardrails.sync_from_flag_file()
         if guardrails.is_emergency_stop_active():
             return {

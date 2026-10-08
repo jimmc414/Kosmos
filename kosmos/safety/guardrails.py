@@ -9,9 +9,11 @@ Implements:
 - Experiment approval gates
 """
 
+import os
 import signal
 import logging
 import json
+import threading
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -27,6 +29,14 @@ from kosmos.safety.code_validator import CodeValidator
 from kosmos.config import get_config
 
 logger = logging.getLogger(__name__)
+
+
+def _config_number(section: Any, name: str, default: Optional[float]) -> Optional[float]:
+    """A numeric config value; anything else (unset, or a Mock config in tests) gives default."""
+    value = getattr(section, name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return default
+    return value
 
 
 class SafetyGuardrails:
@@ -46,7 +56,7 @@ class SafetyGuardrails:
     def __init__(
         self,
         incident_log_path: Optional[str] = None,
-        enable_signal_handlers: bool = True,
+        enable_signal_handlers: bool = False,
         docker_client: Optional[Any] = None
     ):
         """
@@ -54,7 +64,9 @@ class SafetyGuardrails:
 
         Args:
             incident_log_path: Path to safety incident log file
-            enable_signal_handlers: Register signal handlers for emergency stop
+            enable_signal_handlers: Register SIGTERM/SIGINT handlers that trigger the
+                emergency stop and then chain to the previous handler. Off by
+                default; only honoured in the main thread.
             docker_client: Optional Docker client for killing sandbox containers
                           on emergency stop (e.g., docker.from_env())
         """
@@ -82,9 +94,9 @@ class SafetyGuardrails:
 
         # Resource limits (from config)
         self.default_resource_limits = ResourceLimit(
-            max_cpu_cores=getattr(config.safety, 'max_cpu_cores', None),
-            max_memory_mb=getattr(config.safety, 'max_memory_mb', 2048),
-            max_execution_time_seconds=getattr(config.safety, 'max_execution_time', 300),
+            max_cpu_cores=_config_number(config.safety, 'max_cpu_cores', None),
+            max_memory_mb=_config_number(config.safety, 'max_memory_mb', 2048),
+            max_execution_time_seconds=_config_number(config.safety, 'max_execution_time', 300),
             allow_network_access=False,
             allow_file_write=False,
             allow_subprocess=False
@@ -93,18 +105,37 @@ class SafetyGuardrails:
         logger.info("SafetyGuardrails initialized")
 
     def _register_signal_handlers(self):
-        """Register signal handlers for emergency stop."""
-        def signal_handler(signum, frame):
-            logger.warning(f"Emergency stop signal received: {signum}")
-            self.trigger_emergency_stop(
-                triggered_by="signal",
-                reason=f"Signal {signum} received"
-            )
+        """Register SIGTERM and SIGINT handlers for emergency stop.
 
-        # Register SIGTERM and SIGINT
+        Each handler triggers the emergency stop and then chains to the handler
+        that was installed before it, so the process keeps its normal response
+        to the signal (KeyboardInterrupt for SIGINT, termination for SIGTERM).
+        Signal handlers can only be set from the main thread; elsewhere this is
+        a no-op.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            logger.info("Not in the main thread; emergency-stop signal handlers not registered")
+            return
+
+        def make_handler(prev):
+            def signal_handler(signum, frame):
+                logger.warning(f"Emergency stop signal received: {signum}")
+                self.trigger_emergency_stop(
+                    triggered_by="signal",
+                    reason=f"Signal {signum} received"
+                )
+                if callable(prev):
+                    prev(signum, frame)
+                elif prev == signal.SIG_DFL:
+                    # Re-deliver the signal with its default action
+                    signal.signal(signum, signal.SIG_DFL)
+                    os.kill(os.getpid(), signum)
+            return signal_handler
+
         try:
-            signal.signal(signal.SIGTERM, signal_handler)
-            signal.signal(signal.SIGINT, signal_handler)
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                prev = signal.getsignal(sig)
+                signal.signal(sig, make_handler(prev))
             logger.info("Signal handlers registered for emergency stop")
         except Exception as e:
             logger.warning(f"Could not register signal handlers: {e}")

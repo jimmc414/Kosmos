@@ -101,7 +101,7 @@ class SafetyIncident(BaseModel):
 
     incident_id: str
     timestamp: datetime = Field(default_factory=datetime.now)
-    violation: SafetyViolation
+    violation: Optional[SafetyViolation] = None  # None for an emergency stop
     context: Dict[str, Any] = Field(default_factory=dict)
     action_taken: str  # What was done in response
     experiment_id: Optional[str] = None

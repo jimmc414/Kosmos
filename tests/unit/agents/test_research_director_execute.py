@@ -147,7 +147,8 @@ async def test_sandbox_image_comes_from_config(director, configured, expected):
         mock_cls.return_value.use_sandbox = True
         await director._handle_execute_experiment_action(EXP_ID)
 
-    assert mock_cls.call_args.kwargs["sandbox_config"] == {"image": expected}
+    # P3-1 adds the guardrails resource limits beside the image
+    assert mock_cls.call_args.kwargs["sandbox_config"]["image"] == expected
 
 
 def test_convergence_check_receives_hypotheses_and_results(director):
