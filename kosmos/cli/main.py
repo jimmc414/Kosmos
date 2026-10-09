@@ -432,6 +432,8 @@ def register_commands():
         ("profile", "kosmos.cli.commands.profile", "profile_command"),
         ("graph", "kosmos.cli.commands.graph", "manage_graph"),
         ("report", "kosmos.cli.commands.report", "generate_report"),
+        ("validate-null", "kosmos.cli.commands.metrics", "validate_null"),
+        ("rerun", "kosmos.cli.commands.metrics", "rerun_result"),
     ]
 
     import importlib

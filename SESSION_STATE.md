@@ -12,11 +12,13 @@
      their log rows at the top are the index). Anchor edits on the LINE-START
      header; this comment quotes the headers and a substring search lands here. -->
 
-## NEXT ACTION (rewritten s8, 2026-10-09)
-s9 = M9 VIAB#M-1 `kosmos validate-null` and `kosmos rerun` (BUILD·high), the last S3 row, under the
-owner's /goal loop. After M9: plan §8 step 23 whole (test_report.py + test_metric_commands.py) and the
-S3 stage gate. Then M10 (LIVE-25, spend authorized once by OWNER#goal-loop-rulings ruling 2; the
-signature is a STOP).
+## NEXT ACTION (rewritten s9, 2026-10-09)
+s10 = M10 VIAB#LIVE-25 live acceptance run (BUILD·high, OWNER-gated) under the owner's /goal loop:
+OWNER#goal-loop-rulings ruling 2 authorizes the spend ONCE, exactly plan §8 step 25 (DeepSeek,
+`--budget 1`, the climate CSV, seed 42, --max-iterations 3). Then `kosmos report`, `kosmos rerun`,
+`kosmos validate-null --k 20`, and STOP for the owner's signature (ruling 3: not pre-answered).
+Before launching: HYG#neo4j-autostart-compose and HYG#retry-wrapper-reports-failure-as-success are
+escalate-by M10 (read both; neither blocks launching on this host, see the rows).
 
 ## Waiting-on-owner (same ids as BACKLOG §OWNER; the sweep keys on this section)
 - `SIGNAL#disk-c-low` — **NEW s7**: C: (/mnt/c) has 6.4 GB free against a 10 GB floor; Docker Desktop images and build cache live there (kosmos:test is 4.9 GB). The session cannot prune (Genesis rules). Free space, or allow removing kosmos:test or pruning the build cache outside the Genesis windows — escalate-by M10
@@ -48,6 +50,16 @@ PARKED (never started under the hold): (none)
 - **Last documentation-checklist run:** s0 2026-10-04 (B7 freeze; token in docs/MAP_CHANGELOG.md and docs/PLAN.md §Commit trail)
 
 ## Recent sessions (newest first; each block opens with `<!-- session s<N> -->`)
+<!-- session s9 -->
+### s9 — 2026-10-09 ≈03:30 → 03:45 CDT (BUILD Opus high; /goal loop) — M9 VIAB#M-1 `kosmos validate-null` and `kosmos rerun`, then the S3 stage gate
+- signals: signals: RED disk · 7 checks · tree 5M/36U (SIGNAL#disk-c-low, owner)
+- **CI:** GitHub run 37905129416 (at 378415a): 1 failed, 1747 passed. test_load_parquet_file_not_found failed because CI resolved a pyarrow that needs NumPy 2 (the project pins <2); the test now importorskips pyarrow.parquet (commit `s9 — P3-3: …`) and HYG#pyarrow-numpy2-resolution is registered (fresh installs cannot load Parquet).
+- **What landed (M9):** commit `s9 — M-1: …`, built by one agent and reviewed by the session. kosmos/cli/commands/metrics.py: `validate-null` follows the plan's loop (shuffle_target with default_rng(seed+i), NullModelValidator(n_permutations, random_seed=seed+i), passes_null_test counted). It also passes the gate's shuffle_func, as the P2-2 director gate does, so the command measures that gate's false-positive rate. It stores shuffled_pass_rate (plus a shuffled_null parameter dict) through update_result_validation with status and supports unchanged; rows whose file is missing or changed are skipped with a reason; exit 1 when no row is eligible or the mean exceeds alpha. `rerun` checks the data sha256 before executing anything, runs execute_with_data with the stored seed and use_sandbox from provenance, sets exact_match (rel_tol 1e-9), records p per extra seed and conclusion_stable, and persists provenance.reproducibility through the new operations.update_result_provenance (additive); exit 1 on a mismatch, a changed file, or a missing result/code/statistic. Both are registered like `report`. tests/unit/cli/test_metric_commands.py (7).
+- **Deviations:** (1) shuffle_func passed (see above). (2) n_permutations defaults to the director's 500 (`--permutations`). (3) Only passes_null_test is counted, as the plan says; the director gate also requires not persists_in_noise. (4) On the fixture the rate is exactly 0.05 (1 of 20), which is at alpha; exit 1 needs "exceeds", so the step-25 conjunct "mean shuffled pass rate ≤ 0.05" holds at the edge on this data. (5) The commands live in commands/metrics.py and are registered in main.py (the current pattern).
+- **Tests / verify:** plan §8 step 23 bare: 15 passed, exit 0, kosmos.db md5 2758f443 before and after. `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (238 s)` 03:36:12 → 03:40:10, judge 0 red / 0 baseline (one ladder for both commits).
+- **Review:** SELF-REVIEW three lenses on the agent's diff: the loop matches the plan; the sha check runs before any execution; the provenance write is additive; the audit file was not written (mtime 00:57). Tally: 0 found, 0 open.
+- **Wrap:** clean. S3 exit gate met (step 23 green, ladder green), so this session made the S3 stage-gate commit.
+
 <!-- session s8 -->
 ### s8 — 2026-10-09 ≈03:09 → 03:35 CDT (BUILD Opus high; /goal loop) — CI fix-forward, then M8 VIAB#C-1 Findings JSON and `kosmos report`
 - signals: signals: RED disk · 7 checks · tree 5M/36U (SIGNAL#disk-c-low, owner)
@@ -147,6 +159,7 @@ PARKED (never started under the hold): (none)
 ## Session log (append-only; NEWEST FIRST; insert directly below the separator)
 | Date | Did | Commits | Verify |
 |---|---|---|---|
+| 2026-10-09 s9 | **M9 VIAB#M-1 done; S3 → done, S4 → active (BUILD Opus high, /goal).** `kosmos validate-null` and `kosmos rerun`; CI parquet test guarded, HYG#pyarrow-numpy2-resolution registered. Step 23 green (15 passed). Review: 3 lenses on the agent's diff. | `s9 — P3-3:`, `s9 — M-1:`, `s9 — S3-gate:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (238 s) 03:36:12 → 03:40:10` |
 | 2026-10-09 s8 | **CI fix-forward + M8 VIAB#C-1 done (BUILD Opus high, /goal).** 5 CI-only failures fixed (openpyxl, scikit-learn 1.8 penalty, untracked CSV → skip + owner row, event-loop order); findings JSON per validated/rejected result and `kosmos report`. Step 23 C-1 half green. Review: 3 lenses on the agent's diff. | 378415a, `s8 — C-1:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (224 s) 03:24:08 → 03:27:52` |
 | 2026-10-09 s7 | **M7 VIAB#P3-5 done; S2 → done, S3 → active (BUILD Opus high, /goal).** README rewritten to the director path and the measured state, README CANON; gaps banner; DEEP_ONBOARD's seven items fixed in place (untracked). Step 22 green. SIGNAL#disk-c-low recorded. Review: 3 lenses, 1 overclaim fixed. | `s7 — P3-5:`, `s7 — S2-gate:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (252 s) 02:57:00 → 03:01:12` |
 | 2026-10-09 s6 | **M6 VIAB#P3-3 done; FACTORY#retire-test-baseline done; F1/F2 waived by the owner's /goal (BUILD Opus high).** Hermetic test suite after a .env key printed into the transcript (reported; OWNER#rotate-semantic-scholar-key). All 394 baseline ids green, baseline empty; about 12 source defects fixed; 4 parallel agents on disjoint files; steps 18/20/24 exit 0 bare. Review: 3 lenses + agents, 3 RED controls, 11 rows registered. | `s6 — P3-3:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (274 s) 02:47:54 → 02:52:28` |

@@ -501,6 +501,28 @@ def update_result_validation(
     return result
 
 
+def update_result_provenance(
+    session: Session,
+    result_id: str,
+    provenance: Dict[str, Any],
+) -> Result:
+    """Replace a result's provenance record (for example to add a rerun's
+    reproducibility entry). Every other column is left as it is."""
+    _validate_json_dict(provenance, "provenance", required=True)
+    result = get_result(session, result_id)
+    if not result:
+        raise ValueError(f"Result {result_id} not found")
+
+    # A new dict, so the JSON column registers the change
+    result.provenance = dict(provenance)
+
+    session.commit()
+    session.refresh(result)
+
+    logger.info(f"Updated result {result_id} provenance")
+    return result
+
+
 def get_results_for_run(session: Session, run_id: str) -> List[Result]:
     """Get all results recorded for a research run, oldest first."""
     return (
