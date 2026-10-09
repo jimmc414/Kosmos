@@ -9,7 +9,12 @@ import os
 from unittest.mock import patch
 
 import pytest
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+# The SDK is the optional `claude-code` extra; CI installs it, a plain dev install skips
+claude_agent_sdk = pytest.importorskip("claude_agent_sdk")
+AssistantMessage = claude_agent_sdk.AssistantMessage
+ResultMessage = claude_agent_sdk.ResultMessage
+TextBlock = claude_agent_sdk.TextBlock
 
 from kosmos.core.metrics import get_metrics
 from kosmos.core.providers.base import ProviderAPIError

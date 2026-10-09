@@ -63,6 +63,7 @@ The core install includes litellm. Optional extras:
 | `execution` | `docker` | Running experiments in the Docker sandbox (`pip install -e ".[execution]"`) |
 | `embeddings` | `sentence-transformers` (pulls torch) | SPECTER novelty and vector paper search; without it novelty uses TF-IDF |
 | `postgres` | `psycopg2-binary` | `DATABASE_URL=postgresql://...` |
+| `claude-code` | `claude-agent-sdk` | `--provider claude-code` (Anthropic models through a Claude Code login) |
 | `server` | `fastapi`, `uvicorn`, `requests` | `kosmos/api/health.py` probes and alert webhooks; Kosmos runs no HTTP server |
 
 ### Verify Installation
@@ -192,7 +193,7 @@ KOSMOS_ANTHROPIC_API_KEY=sk-ant-api03-...
 CLAUDE_MODEL=claude-opus-5-5
 
 # Anthropic models through your Claude Code login (e.g. a Max subscription), no API key.
-# Needs `pip install claude-agent-sdk`, the `claude` CLI on PATH and `claude login`.
+# Needs `pip install -e ".[claude-code]"`, the `claude` CLI on PATH and `claude login`.
 LLM_PROVIDER=claude_code
 CLAUDE_CODE_MODEL=claude-opus-5-5
 

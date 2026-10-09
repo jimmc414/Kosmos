@@ -167,6 +167,11 @@ postgres = [
     "psycopg2-binary>=2.9",
 ]
 
+claude-code = [
+    # LLM_PROVIDER=claude_code / --provider claude-code: Anthropic models through a Claude Code login
+    "claude-agent-sdk>=0.1.20",
+]
+
 all = [
     "kosmos-ai-scientist[dev,science,execution,monitoring]",
 ]
