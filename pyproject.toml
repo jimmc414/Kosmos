@@ -27,6 +27,7 @@ dependencies = [
     # LLM Providers
     "anthropic>=0.40.0",  # Claude/Anthropic provider
     "openai>=1.0.0",      # OpenAI provider and OpenAI-compatible APIs
+    "litellm>=1.40.0",    # LiteLLM provider (DeepSeek, Ollama, ...) and code generation
 
     # Configuration and validation
     "pydantic>=2.0.0",
@@ -154,6 +155,18 @@ embeddings = [
     "sentence-transformers>=2.2.0",
 ]
 
+server = [
+    # kosmos/api/health.py probes and monitoring webhooks; Kosmos runs no HTTP server
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "requests>=2.31",
+]
+
+postgres = [
+    # PostgreSQL driver for DATABASE_URL=postgresql://... (SQLAlchemy's default driver)
+    "psycopg2-binary>=2.9",
+]
+
 all = [
     "kosmos-ai-scientist[dev,science,execution,monitoring]",
 ]
@@ -261,6 +274,17 @@ extend-exclude = '''
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "kosmos-figures",
+]
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -275,17 +299,8 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex (we'll handle this case-by-case)
 ]
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    "build",
-    "dist",
-    "kosmos-figures",
-]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # Allow unused imports in __init__.py
 
 [tool.mypy]

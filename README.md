@@ -39,11 +39,20 @@ cp .env.example .env
 # Edit .env and set ANTHROPIC_API_KEY or OPENAI_API_KEY
 ```
 
+The core install includes litellm. Optional extras:
+
+| Extra | Adds | Needed for |
+|-------|------|-----------|
+| `execution` | `docker` | Running experiments in the Docker sandbox (`pip install -e ".[execution]"`) |
+| `embeddings` | `sentence-transformers` (pulls torch) | SPECTER novelty and vector paper search; without it novelty uses TF-IDF |
+| `postgres` | `psycopg2-binary` | `DATABASE_URL=postgresql://...` |
+| `server` | `fastapi`, `uvicorn`, `requests` | `kosmos/api/health.py` probes and alert webhooks; Kosmos runs no HTTP server |
+
 ### Verify Installation
 
 ```bash
-# Run smoke tests
-python scripts/smoke_test.py
+# Report provider, model, litellm, Docker daemon, sandbox image and database URL
+python scripts/check_env.py
 
 # Run unit tests
 pytest tests/unit/ -v --tb=short

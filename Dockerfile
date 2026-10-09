@@ -7,7 +7,7 @@
 # Features:
 # - Multi-stage build for minimal image size
 # - Non-root user for security
-# - Health check endpoint
+# - Health check runs the CLI (single-user CLI; no HTTP server)
 # - Optimized layer caching
 # - Production-ready configuration
 #
@@ -15,7 +15,7 @@
 #   docker build -t kosmos:latest .
 #
 # Run:
-#   docker run -p 8000:8000 kosmos:latest
+#   docker run --rm kosmos:latest python -m kosmos.cli.main version
 #
 # =============================================================================
 
@@ -23,7 +23,7 @@
 # Stage 1: Builder
 # =============================================================================
 
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 LABEL maintainer="Kosmos AI Scientist Team"
 LABEL description="Autonomous scientific research system"
@@ -40,8 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements first (for layer caching)
-COPY pyproject.toml README.md ./
+# Copy the packaging inputs first (for layer caching); pyproject's data-files
+# need .env.example, alembic.ini and alembic/
+COPY pyproject.toml README.md .env.example alembic.ini ./
+COPY alembic/ ./alembic/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
@@ -51,7 +53,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Stage 2: Runtime
 # =============================================================================
 
-FROM python:3.11-slim
+FROM python:3.11-slim AS production
 
 # Set working directory
 WORKDIR /app
@@ -91,12 +93,9 @@ ENV PYTHONUNBUFFERED=1 \
     KOSMOS_LOG_DIR=/app/logs \
     KOSMOS_CACHE_DIR=/app/cache
 
-# Expose port (if running web service)
-EXPOSE 8000
-
-# Health check
+# Health check (version is a subcommand; there is no --version flag)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import kosmos; print('healthy')" || exit 1
+    CMD python -m kosmos.cli.main version || exit 1
 
 # Default command
 CMD ["python", "-m", "kosmos.cli.main", "--help"]

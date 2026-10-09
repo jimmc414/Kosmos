@@ -24,7 +24,8 @@ Count: `cd docs/execution && cat backlog/*.md BACKLOG.md | grep -c '^- \*\*'` (t
 ## §OWNER router
 | id | ask | escalate-by | status |
 |---|---|---|---|
-| OWNER#compose-edit-approval | approve P3-2's docker-compose.yml edit and staging, or commit the hardening first | S2 start (the session reaching VIAB#P3-2) | open |
+| OWNER#compose-edit-permission | make M5b's docker-compose.yml edit by hand (the session's write was refused by the permission classifier), or allow it | S2 exit | open |
+| OWNER#compose-edit-approval | approve P3-2's docker-compose.yml edit and staging, or commit the hardening first | S2 start (the session reaching VIAB#P3-2) | ruled 2026-10-08 (backlog/OWNER-ruled.md) |
 | OWNER#live-spend-authorization | confirm at launch time that LIVE-25 may spend (DeepSeek, `--budget 1`) | S4 start | open |
 | OWNER#live-report-signature | read and sign the LIVE-25 `kosmos report` | S4 | open |
 | DEC#tier-c-archive | archive Tier C (kosmos/domains, domain templates) or keep (MAP D-04 revisit) | after S4 | open |

@@ -75,6 +75,7 @@ cache/
 # Environment and secrets
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 credentials.json
@@ -107,3 +108,22 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# Service data volumes and run output (owner data; never in the image).
+# postgres_data/ is root-owned and unreadable from the build context.
+neo4j_data/
+neo4j_logs/
+neo4j_import/
+neo4j_plugins/
+postgres_data/
+redis_data/
+.literature_cache/
+artifacts/runs/
+chroma_db/
+.chroma_db/
+.coverage.*
+
+# Reference material the image never uses
+kosmos-reference/
+kosmos-claude-scientific-skills/
+paper/
