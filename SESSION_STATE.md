@@ -12,13 +12,12 @@
      their log rows at the top are the index). Anchor edits on the LINE-START
      header; this comment quotes the headers and a substring search lands here. -->
 
-## NEXT ACTION (rewritten s9, 2026-10-09)
-s10 = M10 VIAB#LIVE-25 live acceptance run (BUILD·high, OWNER-gated) under the owner's /goal loop:
-OWNER#goal-loop-rulings ruling 2 authorizes the spend ONCE, exactly plan §8 step 25 (DeepSeek,
-`--budget 1`, the climate CSV, seed 42, --max-iterations 3). Then `kosmos report`, `kosmos rerun`,
-`kosmos validate-null --k 20`, and STOP for the owner's signature (ruling 3: not pre-answered).
-Before launching: HYG#neo4j-autostart-compose and HYG#retry-wrapper-reports-failure-as-success are
-escalate-by M10 (read both; neither blocks launching on this host, see the rows).
+## NEXT ACTION (rewritten s10, 2026-10-09)
+WAIT for OWNER#live-report-signature (the owner's /goal ruling 3: not pre-answered). The owner reads
+artifacts/runs/run_4b6e700589b0/report.md and signs in chat. Then, in one session: record the RULED
+line here and a docs/MAP_CHANGELOG.md row; flip S4 done (stage-gate commit); archive docs/PLAN.md
+to docs/execution/archive/PLAN_S1-S4.md; ladder green on the final tree; then ruling 4: PR
+viability-fixes → master with a merge commit (`gh pr create`, `gh pr merge --merge`).
 
 ## Waiting-on-owner (same ids as BACKLOG §OWNER; the sweep keys on this section)
 - `SIGNAL#disk-c-low` — **NEW s7**: C: (/mnt/c) has 6.4 GB free against a 10 GB floor; Docker Desktop images and build cache live there (kosmos:test is 4.9 GB). The session cannot prune (Genesis rules). Free space, or allow removing kosmos:test or pruning the build cache outside the Genesis windows — escalate-by M10
@@ -26,7 +25,8 @@ escalate-by M10 (read both; neither blocks launching on this host, see the rows)
 - `OWNER#goal-loop-rulings` — **RULED 2026-10-09 (s6)**: the /goal text pre-answers F1/F2 (waived), LIVE-25 spend (authorized once, exactly step 25), the report signature (NOT pre-answered: stop and wait), and the merge to master (authorized once, by PR, merge commit) (backlog/OWNER-ruled.md)
 - `OWNER#compose-edit-permission` — **RULED 2026-10-09 (s5)**: the owner ran the M5b edit by hand and committed it (backlog/OWNER-ruled.md)
 - `OWNER#compose-edit-approval` — **RULED 2026-10-08 (s3)**: "yes that is fine. make sure you don't impair anything in the collection-software/genesis or cp_postgresql projects I think they may have some docker dependencies." M5b may edit and stage docker-compose.yml in its own commit, the owner's hardening included as-is, under §STANDING "Genesis shares this host" (backlog/OWNER-ruled.md)
-- `OWNER#live-spend-authorization` — LIVE-25 spends DeepSeek money (`--budget 1`, under $1): confirm at launch time that the run may be launched by the session, attended or through a PRE-ANSWERED line — escalate-by S4 start — NEW s0
+- `OWNER#live-report-signature` — **ASKED s10 (blocks S4 and the merge)**: read artifacts/runs/run_4b6e700589b0/report.md and sign in chat; the s10 block quotes the four outputs — escalate-by now
+- `OWNER#live-spend-authorization` — **RULED and USED (s10)**: LIVE-25 launched once under OWNER#goal-loop-rulings ruling 2, $0.0092 spent
 - `OWNER#live-report-signature` — after LIVE-25, read `kosmos report --run-id <run_id>` and sign it (a RULED line here and a docs/MAP_CHANGELOG.md row); S4 cannot flip without it — escalate-by S4 — NEW s0
 - `DEC#tier-c-archive` — MAP D-04 revisit: archive kosmos/domains and the domain protocol templates (Tier C) after the live acceptance run, or keep them — escalate-by after S4 — NEW s0
 - `DEC#scholar-eval-gate` — MAP D-07 revisit: calibrate ScholarEval thresholds on live DeepSeek runs and decide whether `scholar_eval_gate` joins the validated rule — escalate-by after S4 — NEW s0
@@ -50,6 +50,16 @@ PARKED (never started under the hold): (none)
 - **Last documentation-checklist run:** s0 2026-10-04 (B7 freeze; token in docs/MAP_CHANGELOG.md and docs/PLAN.md §Commit trail)
 
 ## Recent sessions (newest first; each block opens with `<!-- session s<N> -->`)
+<!-- session s10 -->
+### s10 — 2026-10-09 ≈03:41 → 04:10 CDT (BUILD Opus high; /goal loop) — M10 VIAB#LIVE-25 live acceptance run; STOP for the owner's signature
+- signals: (s9's reading applies; SIGNAL#disk-c-low open, owner)
+- **Launch:** OWNER#goal-loop-rulings ruling 2 (spend authorized once). 03:42 CDT, the step-25 command verbatim: `kosmos run "Does atmospheric CO2 concentration predict global temperature anomaly?" --domain climate_science --data-path evaluation/data/climate_co2_temperature_test.csv --seed 42 --max-iterations 3 --budget 1` (DeepSeek through .env: litellm, deepseek/deepseek-chat). Environment redirected into artifacts/runs/live25-env/ (gitignored): DATABASE_URL (dedicated sqlite), NEO4J_URI unreachable, REDIS_ENABLED=false, Chroma, the literature cache, the audit, incident and log paths. Finished 03:55:30, rc 0.
+- **Outputs:** (1) run: 5 hypotheses, 3 experiments attempted, 3 succeeded, 0 failed; results table 3 rows, each OK · file · pearson_correlation · 0.9317 · 5.77e-29 · supported · validated (result ids d0c8785e…, b81d586c…, 61b8c0d0…); 15 API calls, total_cost_usd $0.0092, tokens 22,244 in / 21,870 out, cost per validated finding $0.0031. (2) `kosmos report --run-id run_4b6e700589b0` rc 0 → artifacts/runs/run_4b6e700589b0/report.md (93 lines: metrics, 3 validated findings each "recomputed statistic matches; permutation p = 0.001996 (passes the null test); ScholarEval 0.528 (below threshold)" (advisory, D-07), provenance git_sha 0047fab, data_sha256 b54a25e5…, seed 42), plus findings/*.json and code/*.py for each result. (3) `kosmos rerun --result-id d0c8785e… --seeds 1,2,3` rc 0: statistic 0.9317182759353764 vs stored 0.9317182759353764, exact_match True; seeds 1, 2, 3 p 5.77e-29; conclusion stable. (4) `kosmos validate-null --run-id run_4b6e700589b0 --k 20`: each row 0.050, mean 0.050 ≤ 0.05 (first run exited 1 on a float artifact, fixed in this commit, re-run rc 0; both logs kept).
+- **Owner state checked after:** kosmos.db md5 2758f443 (unchanged); kosmos-postgres Id/StartedAt identical; kosmos-neo4j not restarted; `git status` of .literature_cache and chroma_db unchanged; human_review_audit.jsonl mtime 00:57 (unchanged).
+- **Deviations / observations:** (1) The run used a dedicated DB, not kosmos.db as PLAN M10 says (the goal's hard stops; amendment). (2) The report's "LLM cost attributed to results" is $0.0068 against the run's $0.0092 (hypothesis generation is not attributed to a result; see s8). (3) All three tested hypotheses collapsed to the same bound test, so three identical "findings": HYG#hypotheses-collapse-to-one-test (JUDGMENT, next freeze). (4) ScholarEval scored 0.528, below its threshold; advisory only (D-07), so the verdict is unchanged.
+- **Verify:** `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (294 s)` 03:59:56 → 04:04:50 (with the validate-null fix; test_metric_commands.py 8 passed, RED control: the old comparison fails the new test).
+- **Wrap:** STOP per ruling 3. S4 stays active, blocked(OWNER#live-report-signature); PLAN not archived; no PR yet.
+
 <!-- session s9 -->
 ### s9 — 2026-10-09 ≈03:30 → 03:45 CDT (BUILD Opus high; /goal loop) — M9 VIAB#M-1 `kosmos validate-null` and `kosmos rerun`, then the S3 stage gate
 - signals: signals: RED disk · 7 checks · tree 5M/36U (SIGNAL#disk-c-low, owner)
@@ -159,6 +169,7 @@ PARKED (never started under the hold): (none)
 ## Session log (append-only; NEWEST FIRST; insert directly below the separator)
 | Date | Did | Commits | Verify |
 |---|---|---|---|
+| 2026-10-09 s10 | **M10 VIAB#LIVE-25 run (BUILD Opus high, /goal); S4 blocked on the owner's signature.** Step 25 once: 3 × validated pearson r 0.9317 p 5.77e-29 from file, $0.0092; report, rerun (exact_match True), validate-null (0.050, after a float-compare fix). Owner data untouched (isolated DB). | `s10 — LIVE-25:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (294 s) 03:59:56 → 04:04:50` |
 | 2026-10-09 s9 | **M9 VIAB#M-1 done; S3 → done, S4 → active (BUILD Opus high, /goal).** `kosmos validate-null` and `kosmos rerun`; CI parquet test guarded, HYG#pyarrow-numpy2-resolution registered. Step 23 green (15 passed). Review: 3 lenses on the agent's diff. | `s9 — P3-3:`, `s9 — M-1:`, `s9 — S3-gate:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (238 s) 03:36:12 → 03:40:10` |
 | 2026-10-09 s8 | **CI fix-forward + M8 VIAB#C-1 done (BUILD Opus high, /goal).** 5 CI-only failures fixed (openpyxl, scikit-learn 1.8 penalty, untracked CSV → skip + owner row, event-loop order); findings JSON per validated/rejected result and `kosmos report`. Step 23 C-1 half green. Review: 3 lenses on the agent's diff. | 378415a, `s8 — C-1:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (224 s) 03:24:08 → 03:27:52` |
 | 2026-10-09 s7 | **M7 VIAB#P3-5 done; S2 → done, S3 → active (BUILD Opus high, /goal).** README rewritten to the director path and the measured state, README CANON; gaps banner; DEEP_ONBOARD's seven items fixed in place (untracked). Step 22 green. SIGNAL#disk-c-low recorded. Review: 3 lenses, 1 overclaim fixed. | `s7 — P3-5:`, `s7 — S2-gate:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (252 s) 02:57:00 → 03:01:12` |

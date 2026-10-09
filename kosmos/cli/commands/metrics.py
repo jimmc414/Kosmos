@@ -192,7 +192,9 @@ def validate_null(
     mean = sum(rates) / len(rates)
     console.print(f"Run {escape(run_id)}: mean shuffled_pass_rate = {mean:.3f} over {len(rates)} "
                   f"result(s), alpha = {alpha}", soft_wrap=True)
-    if mean > alpha:
+    # A rate is a multiple of 1/k; averaging floats can land a hair above alpha
+    # ((0.05 + 0.05 + 0.05) / 3 > 0.05), so compare with a tolerance far below 1/k
+    if mean - alpha > 1e-9:
         print_error(f"The null model passes {mean:.3f} of shuffled datasets, above alpha {alpha}.")
         raise typer.Exit(1)
 

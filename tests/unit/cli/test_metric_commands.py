@@ -137,6 +137,19 @@ def test_validate_null_exits_1_when_the_mean_exceeds_alpha(metric_db):
     assert _row()["detail"]["shuffled_pass_rate"] == 0.3
 
 
+
+def test_validate_null_mean_exactly_at_alpha_passes(metric_db):
+    """Three rows at 1/20 average to 0.05000000000000001 in floats; that is not above alpha
+    (LIVE-25 hit this: every row 0.050, exit 1)."""
+    with get_session() as session:
+        _add_result(session, "res-metric-2", CLIMATE_CSV)
+        _add_result(session, "res-metric-3", CLIMATE_CSV)
+    with patch("kosmos.cli.commands.metrics.shuffled_pass_rate", return_value=0.05):
+        result = _invoke("validate-null", "--run-id", RUN_ID, "--k", "20", "--alpha", "0.05")
+
+    assert result.exit_code == 0, result.output
+    assert "over 3 result(s)" in result.output
+
 # --- kosmos rerun ----------------------------------------------------------------------
 
 def test_rerun_reproduces_the_statistic_then_fails_after_tampering(metric_db):
