@@ -43,6 +43,9 @@ def format_timestamp(dt: datetime, relative: bool = True) -> str:
         Formatted timestamp string
     """
     if relative:
+        if dt.tzinfo is None:
+            # DateTime columns without timezone=True come back naive (UTC by convention)
+            dt = dt.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         diff = now - dt
 

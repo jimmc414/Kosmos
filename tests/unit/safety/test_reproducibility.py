@@ -291,6 +291,19 @@ class TestConsistencyValidation:
         assert not report.is_reproducible
         assert any("types differ" in issue.lower() for issue in report.issues)
 
+    def test_validate_dict_vs_non_dict(self):
+        """A dict original against a non-dict replication is a type issue, not a crash."""
+        manager = ReproducibilityManager()
+
+        report = manager.validate_consistency(
+            "exp_test",
+            original_result={"a": 1},
+            replication_result=[1]
+        )
+
+        assert not report.is_reproducible
+        assert any("types differ" in issue.lower() for issue in report.issues)
+
 
 class TestDeterminismTesting:
     """Tests for determinism testing."""

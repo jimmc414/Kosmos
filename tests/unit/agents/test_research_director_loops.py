@@ -208,9 +208,9 @@ class TestMaxActionsPerIterationSafety:
         """Action counter should increment each call."""
         mock_director.workflow.current_state = WorkflowState.GENERATING_HYPOTHESES
 
-        # Ensure clean state
-        if hasattr(mock_director, '_actions_this_iteration'):
-            delattr(mock_director, '_actions_this_iteration')
+        # The counter is initialized to 0 in __init__ (commit 6b42cf2); it is
+        # no longer created lazily, so a fresh director starts at 0.
+        assert mock_director._actions_this_iteration == 0
 
         mock_director.decide_next_action()
 

@@ -9,6 +9,7 @@ from typing import List, Optional, Union
 import numpy as np
 from pathlib import Path
 import logging
+import sys
 
 from kosmos.literature.base_client import PaperMetadata
 
@@ -17,10 +18,19 @@ logger = logging.getLogger(__name__)
 # Optional dependency - sentence_transformers (the "embeddings" extra).
 # Catch any import failure: a broken torch or transformers install raises more
 # than ImportError, and novelty checking falls back to TF-IDF either way.
+_modules_before_probe = set(sys.modules)
 try:
     from sentence_transformers import SentenceTransformer
     HAS_SENTENCE_TRANSFORMERS = True
 except Exception as _import_error:
+    # A failed probe can leave a half-initialised ``transformers`` package in
+    # sys.modules whose lazy attributes raise ModuleNotFoundError on access.
+    # Libraries that inspect sys.modules (shap.TreeExplainer's safe_isinstance
+    # check for transformers.PreTrainedModel) then crash, which broke
+    # MaterialsOptimizer.shap_analysis. Unregister what this failed probe added.
+    for _module_name in set(sys.modules) - _modules_before_probe:
+        if _module_name.split(".")[0] in ("sentence_transformers", "transformers"):
+            sys.modules.pop(_module_name, None)
     logger.warning(
         "sentence_transformers unavailable (%s); SPECTER embeddings disabled. "
         "Install with: pip install \"kosmos-ai-scientist[embeddings]\"",

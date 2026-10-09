@@ -21,9 +21,11 @@ from kosmos.config import get_config
 # Alembic Config object
 config = context.config
 
-# Interpret the config file for Python logging
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Interpret the config file for Python logging, only when alembic owns the process
+# (the `alembic` CLI). kosmos.utils.setup runs migrations inside `kosmos run` and sets
+# configure_logger=False: fileConfig would otherwise disable every existing kosmos logger.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Set target metadata for autogenerate
 target_metadata = Base.metadata

@@ -105,11 +105,11 @@ class TestSemanticScholarSearch:
         assert papers == []
 
     def test_search_with_api_error(self, s2_client):
-        """Test search with API error."""
+        """Test search with API error: the client raises."""
         s2_client.client.search_paper.side_effect = Exception("API Error")
 
-        papers = s2_client.search("test query")
-        assert papers == []
+        with pytest.raises(Exception, match="API Error"):
+            s2_client.search("test query")
 
 
 @pytest.mark.unit
@@ -221,23 +221,24 @@ class TestSemanticScholarErrorHandling:
     """Test error handling."""
 
     def test_search_error_handling(self, s2_client):
-        """Test that errors during search are handled gracefully."""
+        """Errors during search propagate (UnifiedLiteratureSearch isolates per source)."""
         s2_client.client.search_paper.side_effect = Exception("Network error")
 
-        papers = s2_client.search("test query")
-        assert papers == []
+        with pytest.raises(Exception, match="Network error"):
+            s2_client.search("test query")
 
     def test_get_paper_error_handling(self, s2_client):
-        """Test that errors during get_paper are handled gracefully."""
+        """Errors during get_paper propagate."""
         s2_client.client.get_paper.side_effect = Exception("Network error")
 
-        paper = s2_client.get_paper_by_id("test_id")
-        assert paper is None
+        with pytest.raises(Exception, match="Network error"):
+            s2_client.get_paper_by_id("test_id")
 
 
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.requires_api_key
+@pytest.mark.requires_network
 class TestSemanticScholarIntegration:
     """Integration tests (requires API key and network)."""
 

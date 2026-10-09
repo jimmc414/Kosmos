@@ -107,32 +107,32 @@ verify:
 
 test:
 	@echo "🧪 Running test suite..."
-	@pytest tests/ -v
+	@python -m pytest tests/unit tests/integration --no-cov -p no:cacheprovider -q
 
 test-unit:
 	@echo "🧪 Running unit tests..."
-	@pytest tests/unit/ -v
+	@python -m pytest tests/unit --no-cov -p no:cacheprovider -q
 
 test-int:
 	@echo "🧪 Running integration tests..."
-	@pytest tests/integration/ -v
+	@python -m pytest tests/integration --no-cov -p no:cacheprovider -q
 
 test-cov:
 	@echo "🧪 Running tests with coverage..."
-	@pytest tests/ --cov=kosmos --cov-report=html --cov-report=term
+	@python -m pytest tests/unit tests/integration -p no:cacheprovider --cov=kosmos --cov-report=html --cov-report=term
 	@echo "📄 Coverage report generated in htmlcov/index.html"
 
 test-e2e:
 	@echo "🧪 Running E2E tests..."
-	@pytest tests/e2e/ -v --no-cov
+	@python -m pytest tests/e2e/ -v --no-cov -p no:cacheprovider
 
 test-smoke:
 	@echo "🧪 Running smoke tests..."
-	@pytest tests/e2e/ -m smoke -v --no-cov
+	@python -m pytest tests/e2e/ -m smoke -v --no-cov -p no:cacheprovider
 
 test-e2e-quick:
 	@echo "🧪 Running quick E2E tests (excluding slow)..."
-	@pytest tests/e2e/ -m "not slow" -v --no-cov
+	@python -m pytest tests/e2e/ -m "not slow" -v --no-cov -p no:cacheprovider
 
 lint:
 	@echo "🔍 Running linters..."

@@ -47,3 +47,6 @@ empties the baseline (the stamp line reads "retired") and gate 2 becomes a bare 
 ## Enforcement
 scripts/verify.sh gate 2 and scripts/verify_judge.py (known-RED/GREEN controls in their
 docstrings); CLAUDE.md §STANDING TRAPS ("the gate is red" is never a cause).
+
+## Correction note (2026-10-09, s6)
+Retired 2026-10-09 by VIAB#P3-3 (commit `s6 — P3-3: …`): every one of the 394 stamped ids was fixed or rewritten against the real API, and gate 2 ran with 0 red ids (run_20261009_022750 and the re-stamp run). scripts/test_baseline.txt keeps its stamp lines and holds 0 node ids, so the judge's "no red id outside the baseline" is now a plain "no red id". The unit and integration suites are hermetic since the same commit (tests/conftest.py: no .env, no shell credentials, temp paths), which changes what a red means: it can no longer come from the owner's environment.

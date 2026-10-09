@@ -4,24 +4,75 @@ Tests for ConvergenceDetector (Phase 7).
 Tests convergence metrics, stopping criteria, and convergence reporting.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+
 import pytest
 
 from kosmos.core.convergence import (
     ConvergenceDetector,
     ConvergenceMetrics,
-    StoppingDecision,
     StoppingReason,
     ConvergenceReport,
 )
 from kosmos.core.workflow import ResearchPlan
 from kosmos.models.hypothesis import Hypothesis, HypothesisStatus
-from kosmos.models.result import ExperimentResult, ResultStatus
+from kosmos.models.result import (
+    ExecutionMetadata,
+    ExperimentResult,
+    ResultStatus,
+    StatisticalTestResult,
+)
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
+def _make_result(result_id, hypothesis_id, supports, p_value, effect_size):
+    """Build a valid ExperimentResult (experiment/protocol ids, metadata, primary test)."""
+    now = datetime.now(timezone.utc)
+    experiment_id = f"exp_{result_id}"
+    return ExperimentResult(
+        id=result_id,
+        experiment_id=experiment_id,
+        protocol_id="protocol_001",
+        hypothesis_id=hypothesis_id,
+        supports_hypothesis=supports,
+        primary_p_value=p_value,
+        primary_effect_size=effect_size,
+        statistical_tests=[
+            StatisticalTestResult(
+                test_type="t-test",
+                test_name="t-test",
+                statistic=2.5,
+                p_value=p_value,
+                effect_size=effect_size,
+                significant_0_05=p_value < 0.05,
+                significant_0_01=p_value < 0.01,
+                significant_0_001=p_value < 0.001,
+                significance_label="*" if p_value < 0.05 else "ns",
+                is_primary=True,
+            )
+        ],
+        primary_test="t-test",
+        status=ResultStatus.SUCCESS,
+        metadata=ExecutionMetadata(
+            start_time=now,
+            end_time=now,
+            duration_seconds=1.0,
+            python_version="3.11",
+            platform="linux",
+            experiment_id=experiment_id,
+            protocol_id="protocol_001",
+            hypothesis_id=hypothesis_id,
+        ),
+    )
+
+
+def _with_novelty(hypotheses, novelty):
+    """Copy hypotheses with every novelty_score set to `novelty`."""
+    return [h.model_copy(update={"novelty_score": novelty}) for h in hypotheses]
+
 
 @pytest.fixture
 def convergence_detector():
@@ -32,7 +83,7 @@ def convergence_detector():
         config={
             "novelty_decline_threshold": 0.3,
             "novelty_decline_window": 5,
-            "cost_threshold": 100.0,
+            "cost_per_discovery_threshold": 100.0,
         },
     )
 
@@ -49,6 +100,9 @@ def research_plan():
     plan.tested_hypotheses = ["hyp_001"]
     plan.supported_hypotheses = ["hyp_001"]
     plan.rejected_hypotheses = []
+    # Two completed experiments meet min_experiments_before_convergence (default 2),
+    # so reaching the iteration limit is not deferred.
+    plan.completed_experiments = ["exp_result_001", "exp_result_002"]
     plan.iteration_count = 5
     return plan
 
@@ -61,16 +115,16 @@ def sample_hypotheses():
             id="hyp_001",
             research_question="Question",
             statement="Caffeine improves memory",
-            rationale="Rationale 1",
+            rationale="Adenosine antagonism is linked to improved memory encoding",
             domain="neuroscience",
             novelty_score=0.8,
-            status=HypothesisStatus.TESTED,
+            status=HypothesisStatus.SUPPORTED,
         ),
         Hypothesis(
             id="hyp_002",
             research_question="Question",
             statement="Caffeine enhances attention",
-            rationale="Rationale 2",
+            rationale="Caffeine raises arousal, which supports sustained attention",
             domain="neuroscience",
             novelty_score=0.6,
             status=HypothesisStatus.GENERATED,
@@ -79,7 +133,7 @@ def sample_hypotheses():
             id="hyp_003",
             research_question="Question",
             statement="Caffeine reduces fatigue",
-            rationale="Rationale 3",
+            rationale="Adenosine receptor blockade delays the onset of fatigue",
             domain="neuroscience",
             novelty_score=0.5,
             status=HypothesisStatus.GENERATED,
@@ -91,23 +145,19 @@ def sample_hypotheses():
 def sample_results():
     """Create sample experiment results."""
     return [
-        ExperimentResult(
-            id="result_001",
-            hypothesis_id="hyp_001",
-            supports_hypothesis=True,
-            primary_p_value=0.01,
-            primary_effect_size=0.75,
-            primary_test="t-test",
-            status=ResultStatus.SUCCESS,
+        _make_result(
+            "result_001",
+            "hyp_001",
+            supports=True,
+            p_value=0.01,
+            effect_size=0.75,
         ),
-        ExperimentResult(
-            id="result_002",
-            hypothesis_id="hyp_002",
-            supports_hypothesis=False,
-            primary_p_value=0.65,
-            primary_effect_size=0.12,
-            primary_test="t-test",
-            status=ResultStatus.SUCCESS,
+        _make_result(
+            "result_002",
+            "hyp_002",
+            supports=False,
+            p_value=0.65,
+            effect_size=0.12,
         ),
     ]
 
@@ -127,7 +177,8 @@ class TestConvergenceDetectorInitialization:
         assert detector.optional_criteria == ["novelty_decline", "diminishing_returns"]
         assert detector.novelty_decline_threshold == 0.3
         assert detector.novelty_decline_window == 5
-        assert detector.cost_threshold == 100.0
+        assert detector.cost_per_discovery_threshold == 1000.0
+        assert detector.min_experiments_before_convergence == 2
 
     def test_initialization_custom_criteria(self):
         """Test detector initializes with custom criteria."""
@@ -144,14 +195,16 @@ class TestConvergenceDetectorInitialization:
         config = {
             "novelty_decline_threshold": 0.5,
             "novelty_decline_window": 10,
-            "cost_threshold": 200.0,
+            "cost_per_discovery_threshold": 200.0,
+            "min_experiments_before_convergence": 4,
         }
 
         detector = ConvergenceDetector(config=config)
 
         assert detector.novelty_decline_threshold == 0.5
         assert detector.novelty_decline_window == 10
-        assert detector.cost_threshold == 200.0
+        assert detector.cost_per_discovery_threshold == 200.0
+        assert detector.min_experiments_before_convergence == 4
 
     def test_metrics_initialization(self):
         """Test metrics are initialized."""
@@ -173,14 +226,12 @@ class TestProgressMetrics:
     ):
         """Test discovery rate when all results support hypotheses."""
         results = [
-            ExperimentResult(
-                id=f"result_{i}",
-                hypothesis_id=f"hyp_{i}",
-                supports_hypothesis=True,
-                primary_p_value=0.01,
-                primary_effect_size=0.7,
-                primary_test="t-test",
-                status=ResultStatus.SUCCESS,
+            _make_result(
+                f"result_{i}",
+                f"hyp_{i}",
+                supports=True,
+                p_value=0.01,
+                effect_size=0.7,
             )
             for i in range(5)
         ]
@@ -194,23 +245,19 @@ class TestProgressMetrics:
     ):
         """Test discovery rate with mixed results."""
         results = [
-            ExperimentResult(
-                id="result_1",
-                hypothesis_id="hyp_1",
-                supports_hypothesis=True,
-                primary_p_value=0.01,
-                primary_effect_size=0.7,
-                primary_test="t-test",
-                status=ResultStatus.SUCCESS,
+            _make_result(
+                "result_1",
+                "hyp_1",
+                supports=True,
+                p_value=0.01,
+                effect_size=0.7,
             ),
-            ExperimentResult(
-                id="result_2",
-                hypothesis_id="hyp_2",
-                supports_hypothesis=False,
-                primary_p_value=0.65,
-                primary_effect_size=0.1,
-                primary_test="t-test",
-                status=ResultStatus.SUCCESS,
+            _make_result(
+                "result_2",
+                "hyp_2",
+                supports=False,
+                p_value=0.65,
+                effect_size=0.1,
             ),
         ]
 
@@ -236,7 +283,7 @@ class TestProgressMetrics:
                 id=f"hyp_{i}",
                 research_question="Question",
                 statement=f"Statement {i}",
-                rationale="Rationale",
+                rationale="Rationale long enough to pass model validation",
                 domain="test",
                 novelty_score=1.0 - (i * 0.1),  # 1.0, 0.9, 0.8, ...
             )
@@ -259,7 +306,7 @@ class TestProgressMetrics:
                 id=f"hyp_{i}",
                 research_question="Question",
                 statement=f"Statement {i}",
-                rationale="Rationale",
+                rationale="Rationale long enough to pass model validation",
                 domain="test",
                 novelty_score=0.5 + (i * 0.1),  # 0.5, 0.6, 0.7, ...
             )
@@ -295,32 +342,26 @@ class TestProgressMetrics:
         """Test consistency calculation."""
         # Mixed results
         results = [
-            ExperimentResult(
-                id="result_1",
-                hypothesis_id="hyp_1",
-                supports_hypothesis=True,
-                primary_p_value=0.01,
-                primary_effect_size=0.7,
-                primary_test="t-test",
-                status=ResultStatus.SUCCESS,
+            _make_result(
+                "result_1",
+                "hyp_1",
+                supports=True,
+                p_value=0.01,
+                effect_size=0.7,
             ),
-            ExperimentResult(
-                id="result_2",
-                hypothesis_id="hyp_2",
-                supports_hypothesis=True,
-                primary_p_value=0.02,
-                primary_effect_size=0.6,
-                primary_test="t-test",
-                status=ResultStatus.SUCCESS,
+            _make_result(
+                "result_2",
+                "hyp_2",
+                supports=True,
+                p_value=0.02,
+                effect_size=0.6,
             ),
-            ExperimentResult(
-                id="result_3",
-                hypothesis_id="hyp_3",
-                supports_hypothesis=False,
-                primary_p_value=0.65,
-                primary_effect_size=0.1,
-                primary_test="t-test",
-                status=ResultStatus.SUCCESS,
+            _make_result(
+                "result_3",
+                "hyp_3",
+                supports=False,
+                p_value=0.65,
+                effect_size=0.1,
             ),
         ]
 
@@ -381,6 +422,36 @@ class TestMandatoryCriteria:
 
         assert decision.should_stop is True
 
+    def test_check_iteration_limit_deferred_when_too_few_experiments(
+        self, convergence_detector, research_plan
+    ):
+        """At the limit, convergence is deferred while fewer than
+        min_experiments_before_convergence experiments ran and work remains."""
+        research_plan.iteration_count = 10
+        research_plan.max_iterations = 10
+        research_plan.completed_experiments = ["exp_result_001"]  # 1 < 2
+
+        decision = convergence_detector.check_iteration_limit(research_plan)
+
+        assert decision.should_stop is False
+        assert decision.reason == StoppingReason.ITERATION_LIMIT
+        assert decision.is_mandatory is True
+        assert "deferring" in decision.details
+
+    def test_check_iteration_limit_not_deferred_without_testable_work(
+        self, convergence_detector, research_plan
+    ):
+        """Too few experiments but nothing left to test: stop at the limit."""
+        research_plan.iteration_count = 10
+        research_plan.max_iterations = 10
+        research_plan.completed_experiments = []
+        research_plan.tested_hypotheses = ["hyp_001", "hyp_002", "hyp_003"]
+        research_plan.experiment_queue = []
+
+        decision = convergence_detector.check_iteration_limit(research_plan)
+
+        assert decision.should_stop is True
+
     def test_check_hypothesis_exhaustion_not_exhausted(
         self, convergence_detector, research_plan, sample_hypotheses
     ):
@@ -405,7 +476,7 @@ class TestMandatoryCriteria:
         decision = convergence_detector.check_hypothesis_exhaustion(research_plan, sample_hypotheses)
 
         assert decision.should_stop is True
-        assert decision.reason == StoppingReason.HYPOTHESIS_EXHAUSTION
+        assert decision.reason == StoppingReason.NO_TESTABLE_HYPOTHESES
 
     def test_check_hypothesis_exhaustion_with_queued_experiments(
         self, convergence_detector, research_plan, sample_hypotheses
@@ -548,47 +619,78 @@ class TestConvergenceDecision:
         decision = convergence_detector.check_convergence(research_plan, sample_hypotheses, sample_results)
 
         assert decision.should_stop is True
-        assert decision.reason == StoppingReason.HYPOTHESIS_EXHAUSTION
+        assert decision.reason == StoppingReason.NO_TESTABLE_HYPOTHESES
 
     def test_check_convergence_optional_criteria(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test convergence due to optional criteria."""
-        # Set up novelty decline
-        convergence_detector.metrics.novelty_trend = [0.2, 0.22, 0.21, 0.19, 0.18]
+        # Set up novelty decline: prior trend plus the low current novelty
+        # appended by check_convergence are all below the 0.3 threshold.
+        convergence_detector.metrics.novelty_trend = [0.2, 0.22, 0.21, 0.19]
+        low_novelty = _with_novelty(sample_hypotheses, 0.1)
 
-        decision = convergence_detector.check_convergence(research_plan, sample_hypotheses, sample_results)
+        decision = convergence_detector.check_convergence(research_plan, low_novelty, sample_results)
 
-        if decision.should_stop:
-            assert decision.reason == StoppingReason.NOVELTY_DECLINE
-            assert decision.is_mandatory is False
+        assert decision.should_stop is True
+        assert decision.reason == StoppingReason.NOVELTY_DECLINE
+        assert decision.is_mandatory is False
 
     def test_check_convergence_mandatory_takes_precedence(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
-        """Test mandatory criteria checked before optional."""
-        # Set both mandatory and optional to trigger
-        research_plan.iteration_count = 10
-        research_plan.max_iterations = 10
-        convergence_detector.metrics.novelty_trend = [0.2, 0.22, 0.21, 0.19, 0.18]
+        """Hard-stop mandatory criteria (no_testable_hypotheses) are checked before optional."""
+        # Set both a hard-stop mandatory and an optional criterion to trigger
+        research_plan.tested_hypotheses = ["hyp_001", "hyp_002", "hyp_003"]
+        research_plan.experiment_queue = []
+        convergence_detector.metrics.novelty_trend = [0.2, 0.22, 0.21, 0.19]
+        low_novelty = _with_novelty(sample_hypotheses, 0.1)
 
-        decision = convergence_detector.check_convergence(research_plan, sample_hypotheses, sample_results)
+        decision = convergence_detector.check_convergence(research_plan, low_novelty, sample_results)
 
         assert decision.should_stop is True
-        # Should be mandatory (iteration limit), not optional (novelty)
+        # Should be mandatory (hypothesis exhaustion), not optional (novelty)
+        assert decision.reason == StoppingReason.NO_TESTABLE_HYPOTHESES
         assert decision.is_mandatory is True
+
+    def test_check_convergence_optional_reported_before_iteration_limit(
+        self, convergence_detector, research_plan, sample_hypotheses, sample_results
+    ):
+        """iteration_limit is checked last, so a scientific (optional) reason is
+        reported when both would fire (commit 489d8cd)."""
+        research_plan.iteration_count = 10
+        research_plan.max_iterations = 10
+        convergence_detector.metrics.novelty_trend = [0.2, 0.22, 0.21, 0.19]
+        low_novelty = _with_novelty(sample_hypotheses, 0.1)
+
+        decision = convergence_detector.check_convergence(research_plan, low_novelty, sample_results)
+
+        assert decision.should_stop is True
+        assert decision.reason == StoppingReason.NOVELTY_DECLINE
+        assert decision.is_mandatory is False
 
     def test_check_convergence_updates_metrics(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test convergence check updates metrics."""
-        initial_timestamp = convergence_detector.metrics.last_updated
+        initial_timestamp = convergence_detector.metrics.last_update
 
-        convergence_detector.check_convergence(research_plan, sample_hypotheses, sample_results)
+        convergence_detector.check_convergence(
+            research_plan, sample_hypotheses, sample_results, total_cost=10.0
+        )
 
         # Metrics should be updated
-        assert convergence_detector.metrics.last_updated >= initial_timestamp
-        assert convergence_detector.metrics.iteration_count == research_plan.iteration_count
+        metrics = convergence_detector.metrics
+        assert metrics.last_update >= initial_timestamp
+        assert metrics.iteration_count == research_plan.iteration_count
+        assert metrics.total_experiments == 2
+        assert metrics.significant_results == 1
+        assert metrics.discovery_rate == pytest.approx(0.5)
+        assert metrics.hypotheses_tested == 1
+        assert metrics.total_hypotheses == 3
+        assert metrics.novelty_trend == [0.5]  # novelty of the last hypothesis
+        assert metrics.total_cost == pytest.approx(10.0)
+        assert metrics.cost_per_discovery == pytest.approx(10.0)
 
 
 # ============================================================================
@@ -602,40 +704,40 @@ class TestConvergenceReport:
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test generating convergence report."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.ITERATION_LIMIT,
-            is_mandatory=True,
-            confidence=1.0,
-            details="Reached max iterations",
-        )
+        research_plan.has_converged = True
 
         report = convergence_detector.generate_convergence_report(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan,
+            sample_hypotheses,
+            sample_results,
+            stopping_reason=StoppingReason.ITERATION_LIMIT,
         )
 
         assert isinstance(report, ConvergenceReport)
         assert report.research_question == research_plan.research_question
         assert report.converged is True
+        assert report.research_complete is True
         assert report.stopping_reason == StoppingReason.ITERATION_LIMIT
         assert report.total_iterations == research_plan.iteration_count
-        assert report.hypotheses_generated > 0
-        assert report.hypotheses_tested > 0
+        assert report.total_hypotheses == 3
+        assert report.hypotheses_supported == 1
+        assert report.hypotheses_rejected == 0
+        assert report.experiments_conducted == 2
+        assert report.supported_hypotheses == ["Caffeine improves memory"]
+        assert report.final_metrics.hypotheses_tested > 0
+        assert research_plan.research_question in report.summary
 
     def test_convergence_report_to_markdown(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test exporting convergence report to markdown."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.ITERATION_LIMIT,
-            is_mandatory=True,
-            confidence=1.0,
-            details="Test details",
-        )
+        research_plan.has_converged = True
 
         report = convergence_detector.generate_convergence_report(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan,
+            sample_hypotheses,
+            sample_results,
+            stopping_reason=StoppingReason.ITERATION_LIMIT,
         )
 
         markdown = report.to_markdown()
@@ -643,65 +745,54 @@ class TestConvergenceReport:
         assert isinstance(markdown, str)
         assert "# Convergence Report" in markdown
         assert research_plan.research_question in markdown
-        assert "ITERATION_LIMIT" in markdown or "iteration limit" in markdown.lower()
-        assert "## Summary" in markdown
-        assert "## Progress Metrics" in markdown
+        assert "**Stopping Reason**: iteration_limit" in markdown
+        assert "## Summary Statistics" in markdown
+        assert "## Key Metrics" in markdown
+        assert "- Caffeine improves memory" in markdown
 
     def test_report_includes_metrics(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test report includes final metrics."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.ITERATION_LIMIT,
-            is_mandatory=True,
-            confidence=1.0,
-            details="Test",
-        )
-
         report = convergence_detector.generate_convergence_report(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan,
+            sample_hypotheses,
+            sample_results,
+            stopping_reason=StoppingReason.ITERATION_LIMIT,
         )
 
         assert report.final_metrics is not None
         assert isinstance(report.final_metrics, ConvergenceMetrics)
+        assert report.final_metrics.total_experiments == 2
 
     def test_report_includes_recommendations(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test report includes recommended next steps."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.NOVELTY_DECLINE,
-            is_mandatory=False,
-            confidence=0.85,
-            details="Novelty declining",
-        )
-
         report = convergence_detector.generate_convergence_report(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan,
+            sample_hypotheses,
+            sample_results,
+            stopping_reason=StoppingReason.NOVELTY_DECLINE,
         )
 
         assert len(report.recommended_next_steps) > 0
+        assert report.recommended_next_steps[-1] == "Document findings and prepare publication"
 
     def test_report_not_converged(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
         """Test report generation when not converged."""
-        decision = StoppingDecision(
-            should_stop=False,
-            reason=None,
-            is_mandatory=False,
-            confidence=0.0,
-            details="Not converged",
-        )
+        research_plan.has_converged = False
 
         report = convergence_detector.generate_convergence_report(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan, sample_hypotheses, sample_results
         )
 
         assert report.converged is False
+        assert report.research_complete is False
         assert report.stopping_reason is None
+        assert "N/A" in report.to_markdown()
 
 
 # ============================================================================
@@ -709,89 +800,62 @@ class TestConvergenceReport:
 # ============================================================================
 
 class TestRecommendedNextSteps:
-    """Test recommended next steps generation."""
+    """Test recommended next steps generation (driven by plan state and metrics)."""
 
-    def test_recommend_next_steps_iteration_limit(
+    def test_recommend_next_steps_supported_and_untested(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
-        """Test recommendations for iteration limit."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.ITERATION_LIMIT,
-            is_mandatory=True,
-            confidence=1.0,
-            details="Reached limit",
-        )
-
+        """Supported hypotheses -> replicate; untested hypotheses -> test them."""
         steps = convergence_detector._recommend_next_steps(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan, sample_hypotheses, sample_results
         )
 
         assert isinstance(steps, list)
-        assert len(steps) > 0
-        # Should recommend reviewing or continuing with more iterations
-        recommendations_text = " ".join(steps).lower()
-        assert any(word in recommendations_text for word in ["review", "iteration", "continue"])
+        assert "Replicate supported hypotheses in larger studies" in steps
+        assert "Test remaining 2 hypotheses" in steps
+        assert steps[-1] == "Document findings and prepare publication"
 
-    def test_recommend_next_steps_hypothesis_exhaustion(
+    def test_recommend_next_steps_all_tested_none_supported(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
-        """Test recommendations for hypothesis exhaustion."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.HYPOTHESIS_EXHAUSTION,
-            is_mandatory=True,
-            confidence=1.0,
-            details="No more hypotheses",
-        )
+        """No supported and no untested hypotheses -> neither recommendation."""
+        research_plan.supported_hypotheses = []
+        research_plan.tested_hypotheses = ["hyp_001", "hyp_002", "hyp_003"]
 
         steps = convergence_detector._recommend_next_steps(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan, sample_hypotheses, sample_results
         )
 
-        assert len(steps) > 0
         recommendations_text = " ".join(steps).lower()
-        assert any(word in recommendations_text for word in ["hypothesis", "new", "generate"])
+        assert "replicate" not in recommendations_text
+        assert "test remaining" not in recommendations_text
+        assert steps[-1] == "Document findings and prepare publication"
 
-    def test_recommend_next_steps_novelty_decline(
+    def test_recommend_next_steps_high_novelty(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
-        """Test recommendations for novelty decline."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.NOVELTY_DECLINE,
-            is_mandatory=False,
-            confidence=0.85,
-            details="Novelty declining",
-        )
+        """Novelty score above 0.7 -> explore related high-novelty areas."""
+        convergence_detector.metrics.novelty_score = 0.8
 
         steps = convergence_detector._recommend_next_steps(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan, sample_hypotheses, sample_results
         )
 
-        assert len(steps) > 0
-        recommendations_text = " ".join(steps).lower()
-        assert any(word in recommendations_text for word in ["novel", "domain", "direction"])
+        assert "Explore related high-novelty areas" in steps
 
-    def test_recommend_next_steps_diminishing_returns(
+    def test_recommend_next_steps_low_discovery_rate(
         self, convergence_detector, research_plan, sample_hypotheses, sample_results
     ):
-        """Test recommendations for diminishing returns."""
-        decision = StoppingDecision(
-            should_stop=True,
-            reason=StoppingReason.DIMINISHING_RETURNS,
-            is_mandatory=False,
-            confidence=0.9,
-            details="Cost too high",
-        )
+        """Discovery rate below 0.2 -> refine the experimental approach."""
+        convergence_detector.metrics.discovery_rate = 0.1
+        convergence_detector.metrics.novelty_score = 0.5
 
         steps = convergence_detector._recommend_next_steps(
-            decision, research_plan, sample_hypotheses, sample_results
+            research_plan, sample_hypotheses, sample_results
         )
 
-        assert len(steps) > 0
-        recommendations_text = " ".join(steps).lower()
-        assert any(word in recommendations_text for word in ["cost", "efficient", "optimize"])
+        assert "Refine experimental approach to increase discovery rate" in steps
+        assert "Explore related high-novelty areas" not in steps
 
     def test_get_metrics(self, convergence_detector):
         """Test getting current metrics."""

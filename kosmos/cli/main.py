@@ -165,9 +165,9 @@ def main(
         # Don't exit here - let commands handle the error if they need database
         # Some commands (like --help, version) don't need database
 
-    # Suppress console output if quiet mode
-    if quiet:
-        console.quiet = True
+    # Suppress console output if quiet mode. Assign on every invocation so a
+    # --quiet run does not leave the shared console muted for later runs.
+    console.quiet = quiet
 
 
 @app.command()

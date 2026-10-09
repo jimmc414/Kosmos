@@ -96,12 +96,12 @@ class TestArxivSearch:
             assert papers == []
 
     def test_search_error_handling(self, arxiv_client):
-        """Test error handling during search."""
+        """Clients raise; UnifiedLiteratureSearch isolates per source."""
         with patch.object(arxiv_client, 'client') as mock_client:
             mock_client.results.side_effect = Exception("API Error")
 
-            papers = arxiv_client.search("test query")
-            assert papers == []
+            with pytest.raises(Exception, match="API Error"):
+                arxiv_client.search("test query")
 
 
 @pytest.mark.unit
@@ -229,6 +229,7 @@ class TestArxivCategories:
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.requires_network
 class TestArxivClientIntegration:
     """Integration tests for ArxivClient (requires network)."""
 

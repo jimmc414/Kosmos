@@ -22,6 +22,11 @@ def high_quality_findings():
             pancreatic cancer cells compared to wildtype controls. The most significantly
             upregulated gene was MYC (fold change = 3.2, FDR-adjusted p < 0.001).''',
             'statistics': {
+                # The test statistic itself (DESeq2 Wald z; two-sided p = 0.0001
+                # gives |z| = 3.89). Without it the null model takes effect_size
+                # (Cohen's d = 0.82) as the statistic and compares it against a
+                # |N(0, 1)| null, where 0.82 sits inside the IQR ("persists in noise").
+                'statistic': 3.89,
                 'p_value': 0.0001,
                 'sample_size': 150,
                 'n_genes': 87,
@@ -114,6 +119,11 @@ class TestScholarEvalPipeline:
 
         # Should have high rigor score due to comprehensive methods
         assert score.rigor >= 0.7
+
+        # The permutation null ran and the finding stands out from it
+        assert score.statistical_validity == 1.0
+        assert score.null_model_result['persists_in_noise'] is False
+        assert score.null_model_result['passes_null_test'] is True
 
     @pytest.mark.asyncio
     async def test_evaluate_low_quality_finding(self, scholar_validator, low_quality_findings):

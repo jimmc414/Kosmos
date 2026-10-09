@@ -22,6 +22,33 @@ from kosmos.models.result import (
 from datetime import datetime
 
 
+def _stat_test(**kwargs):
+    """Build a StatisticalTestResult; the significance fields are required and derive from p_value."""
+    p = kwargs["p_value"]
+    kwargs.setdefault("significant_0_05", p < 0.05)
+    kwargs.setdefault("significant_0_01", p < 0.01)
+    kwargs.setdefault("significant_0_001", p < 0.001)
+    kwargs.setdefault(
+        "significance_label",
+        "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "ns",
+    )
+    return StatisticalTestResult(**kwargs)
+
+
+def _metadata(experiment_id, protocol_id, duration_seconds):
+    """Build ExecutionMetadata with all required fields."""
+    return ExecutionMetadata(
+        experiment_id=experiment_id,
+        protocol_id=protocol_id,
+        start_time=datetime.utcnow(),
+        end_time=datetime.utcnow(),
+        duration_seconds=duration_seconds,
+        python_version="3.11.0",
+        platform="linux",
+        random_seed=42,
+    )
+
+
 # Fixtures
 
 @pytest.fixture
@@ -64,7 +91,7 @@ def sample_experiment_result():
         primary_effect_size=0.65,
         supports_hypothesis=True,
         statistical_tests=[
-            StatisticalTestResult(
+            _stat_test(
                 test_type="t-test",
                 test_name="Two-sample T-test",
                 statistic=2.54,
@@ -89,13 +116,7 @@ def sample_experiment_result():
             )
             for i in range(3)
         ],
-        metadata=ExecutionMetadata(
-            experiment_id="exp-001",
-            start_time=datetime.utcnow(),
-            end_time=datetime.utcnow(),
-            duration_seconds=5.0,
-            random_seed=42
-        ),
+        metadata=_metadata("exp-001", "proto-001", 5.0),
         created_at=datetime.utcnow()
     )
 
@@ -461,7 +482,7 @@ class TestAutoSelection:
             primary_effect_size=0.8,
             supports_hypothesis=True,
             statistical_tests=[
-                StatisticalTestResult(
+                _stat_test(
                     test_type="correlation",
                     test_name="Pearson Correlation",
                     statistic=0.8,
@@ -471,13 +492,7 @@ class TestAutoSelection:
                 )
             ],
             variable_results=[],
-            metadata=ExecutionMetadata(
-                experiment_id="exp-002",
-                start_time=datetime.utcnow(),
-                end_time=datetime.utcnow(),
-                duration_seconds=2.0,
-                random_seed=42
-            ),
+            metadata=_metadata("exp-002", "proto-002", 2.0),
             created_at=datetime.utcnow()
         )
 
@@ -494,12 +509,13 @@ class TestAutoSelection:
             hypothesis_id="hyp-003",
             protocol_id="proto-003",
             status=ResultStatus.SUCCESS,
-            primary_test="Multiple Tests",
+            # primary_test must name one of statistical_tests
+            primary_test="Test 0",
             primary_p_value=0.01,
             primary_effect_size=0.5,
             supports_hypothesis=True,
             statistical_tests=[
-                StatisticalTestResult(
+                _stat_test(
                     test_type=f"test{i}",
                     test_name=f"Test {i}",
                     statistic=i * 0.5,
@@ -510,13 +526,7 @@ class TestAutoSelection:
                 for i in range(5)
             ],
             variable_results=[],
-            metadata=ExecutionMetadata(
-                experiment_id="exp-003",
-                start_time=datetime.utcnow(),
-                end_time=datetime.utcnow(),
-                duration_seconds=3.0,
-                random_seed=42
-            ),
+            metadata=_metadata("exp-003", "proto-003", 3.0),
             created_at=datetime.utcnow()
         )
 
@@ -534,7 +544,8 @@ class TestAutoSelection:
             hypothesis_id="hyp-004",
             protocol_id="proto-004",
             status=ResultStatus.SUCCESS,
-            primary_test="Test",
+            # No statistical tests, so no primary test to name
+            primary_test=None,
             primary_p_value=0.05,
             primary_effect_size=0.3,
             supports_hypothesis=True,
@@ -553,13 +564,7 @@ class TestAutoSelection:
                 )
                 for i in range(5)  # Multiple variables
             ],
-            metadata=ExecutionMetadata(
-                experiment_id="exp-004",
-                start_time=datetime.utcnow(),
-                end_time=datetime.utcnow(),
-                duration_seconds=2.0,
-                random_seed=42
-            ),
+            metadata=_metadata("exp-004", "proto-004", 2.0),
             created_at=datetime.utcnow()
         )
 

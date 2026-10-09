@@ -78,6 +78,8 @@ def run_database_migrations(database_url: str) -> tuple[bool, Optional[str]]:
         # Create Alembic config
         alembic_cfg = Config(str(alembic_ini))
         alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+        # Keep the application's logging: alembic/env.py skips fileConfig when this is False
+        alembic_cfg.attributes["configure_logger"] = False
 
         # Check current migration version
         engine = create_engine(database_url)

@@ -11,28 +11,73 @@ from pathlib import Path
 from typing import Dict, List
 from unittest.mock import MagicMock, Mock
 
+import dotenv
 import pytest
-from dotenv import load_dotenv
-
-from kosmos.literature.base_client import PaperMetadata, PaperSource
 
 
 # ============================================================================
-# Load Environment at Module Import Time (before pytest collection)
+# Hermetic environment at import time (before pytest collection)
 # ============================================================================
+# Unit and integration tests see neither .env nor credentials exported by the shell,
+# exactly as CI does: a failing assertion on a config value must never print a real
+# key. tests/e2e/conftest.py loads .env itself for the live tests.
 
-# Load .env file immediately when conftest is imported
-_env_path = Path(__file__).parent.parent / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path, override=True)
-    print(f"✅ Loaded environment from {_env_path}")
-else:
-    print(f"⚠️  No .env file found at {_env_path}")
+_CREDENTIAL_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL")
+for _name in list(os.environ):
+    _upper = _name.upper()
+    if any(marker in _upper for marker in _CREDENTIAL_MARKERS) or _upper.endswith("_URL"):
+        del os.environ[_name]
+
+# Writable paths default into a per-run temp dir, never the repo root (kosmos.db,
+# human_review_audit.jsonl). scripts/verify_isolate.py overrides the ones it sets.
+_TEST_RUN_DIR = Path(tempfile.mkdtemp(prefix="kosmos-tests-"))
+os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_RUN_DIR}/test.db"
+os.environ["AUDIT_LOG_PATH"] = str(_TEST_RUN_DIR / "human_review_audit.jsonl")
+os.environ["INCIDENT_LOG_PATH"] = str(_TEST_RUN_DIR / "safety_incidents.jsonl")
+os.environ["KOSMOS_LITERATURE_CACHE_DIR"] = str(_TEST_RUN_DIR / "literature_cache")
+
+# Fixed, non-secret provider settings (the shape of the project's DeepSeek .env). The key
+# is a placeholder: a test that reaches the network fails authentication instead of spending.
+os.environ["LLM_PROVIDER"] = "litellm"
+os.environ["LITELLM_MODEL"] = "deepseek/deepseek-chat"
+os.environ["DEEPSEEK_API_KEY"] = "test-placeholder-not-a-real-key"
+# litellm otherwise downloads its model-cost map at import (a network call)
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+# What the suite starts from (tests/unit/test_hermetic_env.py checks it holds no credential)
+HERMETIC_ENV_AT_IMPORT = dict(os.environ)
+
+
+def _no_dotenv(*args, **kwargs):
+    """Stand-in for dotenv.load_dotenv (kosmos/cli/main.py calls it on every command)."""
+    return False
+
+
+dotenv.load_dotenv = _no_dotenv
+
+import kosmos.config as _kosmos_config  # noqa: E402
+
+for _settings_class in (_kosmos_config.KosmosConfig, _kosmos_config.LiteLLMConfig):
+    _settings_class.model_config["env_file"] = None
+
+import kosmos.knowledge.graph as _kosmos_graph  # noqa: E402
+
+# Tests never start containers: KnowledgeGraph would otherwise run
+# `docker-compose up -d neo4j` in the repo when kosmos-neo4j is not running.
+_kosmos_graph.KnowledgeGraph._ensure_container_running = lambda self: None
+
+from kosmos.literature.base_client import Author, PaperMetadata, PaperSource  # noqa: E402
 
 
 # ============================================================================
 # Path and File Fixtures
 # ============================================================================
+
+@pytest.fixture(scope="session")
+def hermetic_env_at_import() -> Dict[str, str]:
+    """The environment as this conftest left it at import, before any test ran."""
+    return dict(HERMETIC_ENV_AT_IMPORT)
+
 
 @pytest.fixture(scope="session")
 def fixtures_dir() -> Path:
@@ -127,7 +172,7 @@ def sample_paper_metadata(sample_papers_data: List[Dict]) -> PaperMetadata:
         id=paper_id,
         source=_source_to_enum(source_str),
         title=paper_dict["title"],
-        authors=paper_dict["authors"],
+        authors=[Author(name=name) for name in paper_dict["authors"]],
         abstract=paper_dict["abstract"],
         year=paper_dict["year"],
         venue=paper_dict.get("venue"),
@@ -152,7 +197,7 @@ def sample_papers_list(sample_papers_data: List[Dict]) -> List[PaperMetadata]:
                 id=paper_id,
                 source=_source_to_enum(source_str),
                 title=paper_dict["title"],
-                authors=paper_dict["authors"],
+                authors=[Author(name=name) for name in paper_dict["authors"]],
                 abstract=paper_dict["abstract"],
                 year=paper_dict["year"],
                 venue=paper_dict.get("venue"),
@@ -419,6 +464,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "requires_claude: mark test as requiring Claude API"
     )
+    config.addinivalue_line(
+        "markers", "requires_network: calls a public API over the network (KOSMOS_TEST_NETWORK=1 to run)"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -428,11 +476,13 @@ def pytest_collection_modifyitems(config, items):
     skip_chromadb = pytest.mark.skip(reason="ChromaDB not available")
     skip_claude = pytest.mark.skip(reason="Claude API not configured")
     skip_execution = pytest.mark.skip(reason="Execution environment not available")
+    skip_network = pytest.mark.skip(reason="network tests are opt-in: KOSMOS_TEST_NETWORK=1")
 
     # Check environment
     has_api_keys = os.getenv("ANTHROPIC_API_KEY") and os.getenv("SEMANTIC_SCHOLAR_API_KEY")
     has_neo4j = os.getenv("NEO4J_URI")
     has_claude = os.getenv("ANTHROPIC_API_KEY")
+    run_network = os.getenv("KOSMOS_TEST_NETWORK") == "1"
 
     for item in items:
         if "requires_api_key" in item.keywords and not has_api_keys:
@@ -443,6 +493,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_claude)
         if "requires_execution_env" in item.keywords:
             item.add_marker(skip_execution)
+        if "requires_network" in item.keywords and not run_network:
+            item.add_marker(skip_network)
 
 
 # ============================================================================

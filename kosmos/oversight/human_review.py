@@ -17,6 +17,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+from kosmos.config import SafetyConfig
 from kosmos.models.safety import ApprovalRequest, ApprovalStatus, RiskLevel
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,8 @@ class HumanReviewWorkflow:
             notification_callback: Callback for sending notifications
         """
         self.mode = mode
-        self.audit_log_path = audit_log_path or "human_review_audit.jsonl"
+        # Default from SafetyConfig.audit_log_path (AUDIT_LOG_PATH), not a fixed cwd file
+        self.audit_log_path = audit_log_path or SafetyConfig().audit_log_path
         self.auto_approve_low_risk = auto_approve_low_risk
         self.notification_callback = notification_callback
 

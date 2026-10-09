@@ -16,6 +16,8 @@ from kosmos.models.experiment import (
     VariableType,
     ResourceRequirements,
     ControlGroup,
+    StatisticalTest,
+    StatisticalTestSpec,
 )
 from kosmos.experiments.templates.base import TemplateBase, TemplateCustomizationParams, TemplateRegistry
 from kosmos.experiments.templates.data_analysis import TTestComparisonTemplate
@@ -85,14 +87,17 @@ class TestTemplateSystem:
 
     def test_template_registry(self):
         """Test template registration and lookup."""
-        registry = TemplateRegistry()
+        # auto_discover=False: start empty instead of loading the built-in templates
+        registry = TemplateRegistry(auto_discover=False)
 
         class TestTemplate(TemplateBase):
             def __init__(self):
                 super().__init__(
                     name="test_template",
                     experiment_type=ExperimentType.DATA_ANALYSIS,
-                    title="Test Template"
+                    title="Test Template",
+                    # TemplateMetadata.description requires >= 50 characters
+                    description="Minimal data-analysis template used to exercise the template registry",
                 )
 
             def is_applicable(self, hypothesis):
@@ -105,7 +110,7 @@ class TestTemplateSystem:
                     experiment_type=ExperimentType.DATA_ANALYSIS,
                     domain="test",
                     description="Test protocol from template with sufficient length for validation",
-                    objective="Test",
+                    objective="Test objective",
                     steps=[ProtocolStep(step_number=1, title="Test", description="Test step description", action="Test")],
                     variables={},
                     resource_requirements=ResourceRequirements()
@@ -116,14 +121,14 @@ class TestTemplateSystem:
 
         assert len(registry) == 1
         assert "test_template" in registry
-        assert registry.get_template("test_template") is not None
+        assert registry.get_template("test_template") is template
 
     def test_t_test_template(self):
         """Test T-Test template."""
         template = TTestComparisonTemplate()
 
         hypothesis = Hypothesis(
-            statement="Group A will have higher scores than Group B",
+            statement="Group A scores will be higher than Group B scores",
             rationale="Based on prior research, we expect Group A to outperform Group B",
             domain="psychology",
             research_question="Do groups differ?",
@@ -281,11 +286,24 @@ class TestExperimentValidator:
                     rationale="Standard control group for comparison with experimental condition"
                 )
             ],
+            statistical_tests=[
+                StatisticalTestSpec(
+                    test_type=StatisticalTest.T_TEST,
+                    description="Independent samples t-test of dv between groups",
+                    null_hypothesis="H0: mean dv is equal across groups",
+                    variables=["iv", "dv"],
+                )
+            ],
             sample_size=60,
             power_analysis_performed=True,
             random_seed=42,
             reproducibility_notes="Complete reproducibility documentation",
-            resource_requirements=ResourceRequirements()
+            # Completeness checks fail without cost and duration estimates
+            resource_requirements=ResourceRequirements(
+                compute_hours=1.0,
+                estimated_cost_usd=5.0,
+                estimated_duration_days=1.0,
+            )
         )
 
         report = validator.validate(protocol)
@@ -305,7 +323,7 @@ class TestExperimentValidator:
             experiment_type=ExperimentType.DATA_ANALYSIS,
             domain="test",
             description="Experiment without control group that has enough text for validation",
-            objective="Test",
+            objective="Test the validator",
             steps=[ProtocolStep(step_number=1, title="Step", description="Description", action="Action")],
             variables={
                 "iv": Variable(name="iv", type=VariableType.INDEPENDENT, description="Independent var"),
@@ -329,7 +347,7 @@ class TestExperimentValidator:
             experiment_type=ExperimentType.DATA_ANALYSIS,
             domain="test",
             description="Experiment with small sample size for validation testing purposes",
-            objective="Test",
+            objective="Test the validator",
             steps=[ProtocolStep(step_number=1, title="Step", description="Description", action="Action")],
             variables={},
             sample_size=10,  # Too small
@@ -352,11 +370,11 @@ class TestExperimentValidator:
             experiment_type=ExperimentType.DATA_ANALYSIS,
             domain="test",
             description="Comprehensive high-quality protocol with detailed experimental procedures",
-            objective="Test",
-            steps=[ProtocolStep(step_number=i, title=f"Step {i}", description=f"Desc {i}", action=f"Act {i}") for i in range(1, 6)],
+            objective="Test rigor scoring",
+            steps=[ProtocolStep(step_number=i, title=f"Step {i}", description=f"Description {i}", action=f"Act {i}") for i in range(1, 6)],
             variables={
-                "iv": Variable(name="iv", type=VariableType.INDEPENDENT, description="IV"),
-                "dv": Variable(name="dv", type=VariableType.DEPENDENT, description="DV"),
+                "iv": Variable(name="iv", type=VariableType.INDEPENDENT, description="Independent var"),
+                "dv": Variable(name="dv", type=VariableType.DEPENDENT, description="Dependent var"),
             },
             control_groups=[ControlGroup(name="ctrl", description="Control", variables={}, rationale="Standard control comparison")],
             sample_size=100,
@@ -373,8 +391,8 @@ class TestExperimentValidator:
             experiment_type=ExperimentType.DATA_ANALYSIS,
             domain="test",
             description="Basic protocol with minimal details for testing validation",
-            objective="Test",
-            steps=[ProtocolStep(step_number=1, title="Step", description="Desc", action="Act")],
+            objective="Test rigor scoring",
+            steps=[ProtocolStep(step_number=1, title="Step", description="Description", action="Act")],
             variables={},
             control_groups=[],
             sample_size=10,

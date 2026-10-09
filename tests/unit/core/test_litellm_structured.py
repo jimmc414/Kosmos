@@ -113,7 +113,13 @@ class TestRepair:
         assert exc_info.value.recoverable is True
         assert "still not json" in exc_info.value.message
 
-    def test_missing_required_keys_logged(self, provider, caplog):
+    def test_missing_required_keys_logged(self, provider, caplog, monkeypatch):
+        # An earlier test that migrates a fresh database runs alembic/env.py's
+        # fileConfig(), which disables every logger that already exists; re-enable
+        # this module's logger so the assertion does not depend on test order.
+        monkeypatch.setattr(
+            logging.getLogger("kosmos.core.providers.litellm_provider"), "disabled", False
+        )
         schema = {"type": "object", "required": ["name", "steps"]}
         with patch("litellm.completion", return_value=_completion('{"name": "x"}')):
             with caplog.at_level(logging.WARNING, logger="kosmos.core.providers.litellm_provider"):

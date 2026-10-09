@@ -30,5 +30,7 @@ Count: `cd docs/execution && cat backlog/*.md BACKLOG.md | grep -c '^- \*\*'` (t
 | OWNER#live-report-signature | read and sign the LIVE-25 `kosmos report` | S4 | open |
 | DEC#tier-c-archive | archive Tier C (kosmos/domains, domain templates) or keep (MAP D-04 revisit) | after S4 | open |
 | DEC#scholar-eval-gate | calibrate ScholarEval on live runs; gate or stay advisory (MAP D-07 revisit) | after S4 | open |
+| OWNER#rotate-semantic-scholar-key | the SEMANTIC_SCHOLAR_API_KEY value was printed into the s6 session transcript (no file, no commit); rotate it or keep it | any sitting | open |
+| OWNER#goal-loop-rulings | the /goal rulings: F1/F2 waived, LIVE-25 spend authorized once, report signature NOT pre-answered, merge to master authorized once | — | ruled 2026-10-09 (backlog/OWNER-ruled.md) |
 | OWNER#literature-cache-untrack | `.literature_cache/*.pkl` are tracked despite .gitignore:146 and dirty in the tree: `git rm --cached` them or keep tracking | S4 (any pack sitting) | open |
 | OWNER#stop-and-ask-list · OWNER#map-signoff · OWNER#runner-permission-mode · OWNER#s0-branch | Phase A rulings | — | ruled 2026-10-04 (backlog/OWNER-ruled.md) |

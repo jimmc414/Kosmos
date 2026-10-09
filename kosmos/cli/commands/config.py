@@ -76,6 +76,10 @@ def manage_config(
         console.print("\n[warning]Config operation cancelled[/warning]")
         raise typer.Exit(130)
 
+    except typer.Exit:
+        # An intentional exit (with its own code) is not a failure to report
+        raise
+
     except Exception as e:
         print_error(f"Config operation failed: {str(e)}")
         raise typer.Exit(1)

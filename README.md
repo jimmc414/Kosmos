@@ -5,7 +5,6 @@ An autonomous AI scientist for scientific discovery, implementing the architectu
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
 [![Implementation](https://img.shields.io/badge/paper_gaps-17%2F17%20complete-green.svg)](archive/PAPER_IMPLEMENTATION_GAPS.md)
-[![Tests](https://img.shields.io/badge/tests-3704%20passing-green.svg)](archive/120625_code_review.md)
 
 ## What is Kosmos?
 
@@ -54,8 +53,8 @@ The core install includes litellm. Optional extras:
 # Report provider, model, litellm, Docker daemon, sandbox image and database URL
 python scripts/check_env.py
 
-# Run unit tests
-pytest tests/unit/ -v --tb=short
+# Run unit tests (pytest.ini enables an 80% coverage gate; --no-cov skips it)
+python -m pytest tests/unit --no-cov -q
 ```
 
 ### Run Research Workflow
@@ -330,12 +329,13 @@ All 17 paper implementation gaps have been addressed. Full tracking: [PAPER_IMPL
 
 ### Test Coverage
 
-| Category | Count | Status |
-|----------|-------|--------|
-| Unit tests | 2251 | Passing |
-| Integration tests | 415 | Passing |
-| E2E tests | 121 | Most pass, some skip (environment-dependent) |
-| Requirements tests | 815 | Passing |
+```bash
+python -m pytest tests/unit --no-cov -q
+```
+
+Counts change; CI is authoritative (`.github/workflows/unit.yml` runs the unit suite on every push).
+Unit and integration tests run hermetic: `tests/conftest.py` ignores `.env` and removes credential
+variables, so they never call a live service with your keys.
 
 E2E tests skip based on environment:
 - Neo4j not configured (`@pytest.mark.requires_neo4j`)
@@ -421,4 +421,4 @@ MIT License
 
 ---
 
-**Version**: 0.2.0-alpha | **Tests**: 3704 passing | **Last Updated**: 2025-12-09
+**Version**: 0.2.0-alpha | **Tests**: see CI | **Last Updated**: 2026-10-09

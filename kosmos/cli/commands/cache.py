@@ -84,6 +84,10 @@ def manage_cache(
         console.print("\n[warning]Cache operation cancelled[/warning]")
         raise typer.Exit(130)
 
+    except typer.Exit:
+        # An intentional exit (with its own code) is not a failure to report
+        raise
+
     except Exception as e:
         print_error(f"Cache operation failed: {str(e)}")
         raise typer.Exit(1)

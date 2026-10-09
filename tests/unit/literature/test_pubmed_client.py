@@ -33,46 +33,58 @@ class TestPubMedInit:
         assert client.rate_limit == 3 or client.rate_limit == 10
 
 
+MEDLINE_RECORDS = [
+    {
+        "PMID": "23287718",
+        "TI": "Multiplex genome engineering using CRISPR/Cas systems.",
+        "AB": "Functional elucidation of causal genetic variants.",
+        "AU": ["Cong L", "Ran FA"],
+        "DP": "2013 Feb 15",
+        "TA": "Science",
+        "AID": ["10.1126/science.1231143 [doi]"],
+        "MH": ["CRISPR-Cas Systems"],
+    },
+    {
+        "PMID": "28753425",
+        "TI": "A second CRISPR paper.",
+        "AB": "Abstract.",
+        "AU": ["Doe J"],
+        "DP": "2017",
+        "TA": "Nature",
+    },
+]
+
+
 @pytest.mark.unit
 class TestPubMedSearch:
-    """Test PubMed search functionality."""
+    """Test PubMed search functionality (Entrez is reached through _do_esearch/_do_efetch)."""
 
-    @patch('Bio.Entrez.esearch')
-    @patch('Bio.Entrez.efetch')
-    def test_search_success(self, mock_efetch, mock_esearch, pubmed_client, pubmed_response_xml):
+    def test_search_success(self, pubmed_client):
         """Test successful PubMed search."""
-        # Mock esearch response
-        mock_esearch.return_value.__enter__.return_value.read.return_value = {
-            "IdList": ["23287718", "28753425"],
-            "Count": "2",
-        }
+        with patch.object(pubmed_client, "_do_esearch", return_value=["23287718", "28753425"]), \
+             patch.object(pubmed_client, "_do_efetch", return_value=MEDLINE_RECORDS):
+            papers = pubmed_client.search("CRISPR", max_results=2)
 
-        # Mock efetch response
-        mock_efetch.return_value.__enter__.return_value.read.return_value = pubmed_response_xml
-
-        papers = pubmed_client.search("CRISPR", max_results=2)
-
-        assert len(papers) <= 2
+        assert [p.pubmed_id for p in papers] == ["23287718", "28753425"]
         assert all(isinstance(p, PaperMetadata) for p in papers)
+        assert papers[0].doi == "10.1126/science.1231143"
+        assert papers[0].year == 2013
+        assert papers[0].source == PaperSource.PUBMED
 
-    @patch('Bio.Entrez.esearch')
-    def test_search_empty_results(self, mock_esearch, pubmed_client):
+    def test_search_empty_results(self, pubmed_client):
         """Test search with no results."""
-        mock_esearch.return_value.__enter__.return_value.read.return_value = {
-            "IdList": [],
-            "Count": "0",
-        }
+        with patch.object(pubmed_client, "_do_esearch", return_value=[]), \
+             patch.object(pubmed_client, "_do_efetch") as efetch:
+            papers = pubmed_client.search("nonexistent_query_xyz")
 
-        papers = pubmed_client.search("nonexistent_query_xyz")
         assert papers == []
+        efetch.assert_not_called()
 
-    @patch('Bio.Entrez.esearch')
-    def test_search_with_error(self, mock_esearch, pubmed_client):
-        """Test search error handling."""
-        mock_esearch.side_effect = Exception("API Error")
-
-        papers = pubmed_client.search("test query")
-        assert papers == []
+    def test_search_with_error(self, pubmed_client):
+        """Clients raise; UnifiedLiteratureSearch isolates per source."""
+        with patch.object(pubmed_client, "_do_esearch", side_effect=Exception("API Error")):
+            with pytest.raises(Exception, match="API Error"):
+                pubmed_client.search("test query")
 
 
 @pytest.mark.unit
@@ -107,18 +119,13 @@ class TestPubMedGetPaper:
 class TestPubMedRateLimiting:
     """Test rate limiting."""
 
-    @patch('time.sleep')
-    @patch('Bio.Entrez.esearch')
-    def test_rate_limiting_delay(self, mock_esearch, mock_sleep, pubmed_client):
+    @patch('kosmos.literature.pubmed_client.time.sleep')
+    def test_rate_limiting_delay(self, mock_sleep, pubmed_client):
         """Test that rate limiting adds delays."""
-        mock_esearch.return_value.__enter__.return_value.read.return_value = {
-            "IdList": [],
-            "Count": "0",
-        }
-
-        # Make multiple requests
-        pubmed_client.search("query1", max_results=1)
-        pubmed_client.search("query2", max_results=1)
+        # Make multiple requests (Entrez is reached through _do_esearch)
+        with patch.object(pubmed_client, "_do_esearch", return_value=[]):
+            pubmed_client.search("query1", max_results=1)
+            pubmed_client.search("query2", max_results=1)
 
         # Should add delays between requests
         assert mock_sleep.called
@@ -126,6 +133,7 @@ class TestPubMedRateLimiting:
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.requires_network
 class TestPubMedIntegration:
     """Integration tests (requires network)."""
 

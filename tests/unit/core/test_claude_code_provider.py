@@ -4,6 +4,7 @@ Tests for ClaudeCodeProvider (viability plan A-1).
 The Agent SDK's query() is patched, so no test launches the claude binary.
 """
 
+import logging
 import os
 from unittest.mock import patch
 
@@ -60,8 +61,13 @@ def test_generate_runs_a_tool_free_single_turn_query():
 
 
 def test_construction_removes_anthropic_api_key(monkeypatch, caplog):
+    # An earlier test that migrates a fresh database runs alembic/env.py's
+    # fileConfig(), which disables every logger that already exists; re-enable
+    # this module's logger so the assertion does not depend on test order.
+    monkeypatch.setattr(logging.getLogger("kosmos.core.providers.claude_code"), "disabled", False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    ClaudeCodeProvider({})
+    with caplog.at_level(logging.WARNING, logger="kosmos.core.providers.claude_code"):
+        ClaudeCodeProvider({})
     assert "ANTHROPIC_API_KEY" not in os.environ
     assert "ANTHROPIC_API_KEY removed" in caplog.text
 

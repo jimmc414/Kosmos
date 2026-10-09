@@ -18,19 +18,26 @@ from kosmos.agents.skill_loader import SkillLoader
 # Fixtures
 # ============================================================================
 
+def _write_skill(skills_path, name, content):
+    """Write one skill in the layout SkillLoader discovers: <skills_dir>/<name>/SKILL.md."""
+    skill_folder = skills_path / name
+    skill_folder.mkdir(parents=True, exist_ok=True)
+    skill_file = skill_folder / "SKILL.md"
+    skill_file.write_text(content, encoding="utf-8")
+    return skill_file
+
+
 @pytest.fixture
 def skills_dir(temp_dir):
-    """Create a mock skills directory structure."""
+    """Create a mock skills directory structure.
+
+    SkillLoader (since df310b5, issue #67) discovers one skill per top-level
+    folder that contains a SKILL.md file; the folder name is the skill name.
+    """
     skills_path = temp_dir / "scientific-skills"
     skills_path.mkdir(parents=True, exist_ok=True)
 
-    # Create some mock skill files
-    (skills_path / "libraries").mkdir()
-    (skills_path / "databases").mkdir()
-    (skills_path / "analysis").mkdir()
-
-    # Create sample skill files
-    (skills_path / "libraries" / "pandas.md").write_text("""
+    _write_skill(skills_path, "pandas", """
 # Pandas
 
 Data manipulation and analysis library.
@@ -55,7 +62,7 @@ df.describe()
 - fillna, dropna
 """)
 
-    (skills_path / "libraries" / "scipy.md").write_text("""
+    _write_skill(skills_path, "scipy", """
 # SciPy
 
 Scientific computing library.
@@ -68,7 +75,7 @@ result = stats.ttest_ind(group1, group2)
 ```
 """)
 
-    (skills_path / "libraries" / "scanpy.md").write_text("""
+    _write_skill(skills_path, "scanpy", """
 # Scanpy
 
 Single-cell analysis toolkit.
@@ -82,7 +89,7 @@ sc.pp.filter_cells(adata, min_genes=200)
 ```
 """)
 
-    (skills_path / "databases" / "ensembl-database.md").write_text("""
+    _write_skill(skills_path, "ensembl-database", """
 # Ensembl Database
 
 Genome database for vertebrates and model organisms.
@@ -137,10 +144,11 @@ class TestSkillLoaderInit:
         """Test auto-discovery of skills."""
         loader = SkillLoader(skills_dir=str(skills_dir), auto_discover=True)
 
-        # Should find all .md files
+        # Should find every <name>/SKILL.md folder
         assert 'pandas' in loader.skills_cache
         assert 'scipy' in loader.skills_cache
         assert 'scanpy' in loader.skills_cache
+        assert 'ensembl-database' in loader.skills_cache
 
     def test_init_without_auto_discover(self, skills_dir):
         """Test initialization without auto-discovery."""
@@ -161,8 +169,12 @@ class TestSkillLoaderInit:
         """Test that common skills are predefined."""
         loader = SkillLoader(auto_discover=False)
 
-        assert 'pandas' in loader.COMMON_SKILLS
-        assert 'numpy' in loader.COMMON_SKILLS
+        # df310b5 (#67): COMMON_SKILLS lists only skills that exist as skill
+        # folders; pandas/numpy are plain imports, not skill files.
+        assert 'scikit-learn' in loader.COMMON_SKILLS
+        assert 'statsmodels' in loader.COMMON_SKILLS
+        assert 'pandas' not in loader.COMMON_SKILLS
+        assert 'numpy' not in loader.COMMON_SKILLS
 
 
 # ============================================================================
@@ -189,19 +201,27 @@ class TestSkillDiscovery:
         assert 'name' in pandas_skill
         assert 'category' in pandas_skill
         assert pandas_skill['name'] == 'pandas'
-        assert pandas_skill['category'] == 'libraries'
+        assert pandas_skill['path'].endswith('SKILL.md')
+        # Category is the skill folder's name
+        assert pandas_skill['category'] == 'pandas'
         assert pandas_skill['loaded'] is False  # Lazy loading
 
-    def test_discover_nested_skills(self, skills_dir):
-        """Test discovery of nested skill files."""
-        # Create nested directory
-        nested = skills_dir / "libraries" / "ml" / "pytorch.md"
-        nested.parent.mkdir(parents=True, exist_ok=True)
-        nested.write_text("# PyTorch\n\nDeep learning framework.")
+    def test_discover_only_skill_folders(self, skills_dir):
+        """Only top-level folders containing SKILL.md are discovered as skills."""
+        # A loose .md file is not a skill
+        (skills_dir / "loose.md").write_text("# Loose\n\nNot a skill folder.")
+        # A folder without SKILL.md is not a skill
+        (skills_dir / "notes").mkdir()
+        (skills_dir / "notes" / "README.md").write_text("# Notes\n")
+        # A new skill folder is discovered
+        _write_skill(skills_dir, "pytorch", "# PyTorch\n\nDeep learning framework.")
 
         loader = SkillLoader(skills_dir=str(skills_dir), auto_discover=True)
 
         assert 'pytorch' in loader.skills_cache
+        assert 'loose' not in loader.skills_cache
+        assert 'notes' not in loader.skills_cache
+        assert len(loader.skills_cache) == 5
 
 
 # ============================================================================
@@ -243,12 +263,14 @@ class TestSkillLoading:
     def test_load_skill_from_file(self, skill_loader_with_skills, skills_dir):
         """Test loading skill directly from file path."""
         loader = skill_loader_with_skills
-        skill_path = skills_dir / "libraries" / "scipy.md"
+        skill_path = skills_dir / "scipy" / "SKILL.md"
 
         skill = loader.load_skill_from_file(skill_path)
 
+        # A SKILL.md file takes its name from the parent folder
         assert skill['name'] == 'scipy'
         assert 'SciPy' in skill['content']
+        assert skill['loaded'] is True
 
 
 # ============================================================================
@@ -279,7 +301,7 @@ class TestSkillParsing:
         """Test parsing skill with minimal content."""
         skills_dir = temp_dir / "minimal-skills"
         skills_dir.mkdir()
-        (skills_dir / "empty.md").write_text("# Empty Skill\n")
+        _write_skill(skills_dir, "empty", "# Empty Skill\n")
 
         loader = SkillLoader(skills_dir=str(skills_dir), auto_discover=True)
         skill = loader.load_skill('empty')
@@ -541,13 +563,13 @@ class TestSkillLoaderEdgeCases:
         skills_dir.mkdir()
 
         # Create file with special characters
-        skill_path = skills_dir / "special.md"
-        skill_path.write_text("# Special\n\nContent with émojis: 🎉", encoding='utf-8')
+        _write_skill(skills_dir, "special", "# Special\n\nContent with émojis: 🎉")
 
         loader = SkillLoader(skills_dir=str(skills_dir), auto_discover=True)
         skill = loader.load_skill('special')
 
         assert skill is not None
+        assert '🎉' in skill['content']
 
     def test_skills_dir_not_exists(self, temp_dir):
         """Test with non-existent skills directory."""
@@ -580,3 +602,4 @@ class TestSkillLoaderEdgeCases:
 
         assert len(results) == 3
         assert all(r is not None for r in results)
+        assert sorted(r['name'] for r in results) == ['pandas', 'scanpy', 'scipy']

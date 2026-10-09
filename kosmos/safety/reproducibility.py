@@ -278,8 +278,8 @@ class ReproducibilityManager:
             )
         checks.append("result_type")
 
-        # Numeric comparison
-        if isinstance(original_result, (int, float)):
+        # Numeric comparison (a non-numeric replication is already a type issue)
+        if isinstance(original_result, (int, float)) and isinstance(replication_result, (int, float)):
             if abs(original_result - replication_result) > tolerance:
                 issues.append(
                     f"Numeric results differ beyond tolerance: "
@@ -298,7 +298,7 @@ class ReproducibilityManager:
                 issues.append(f"Could not compare arrays: {e}")
 
         # Dict comparison
-        if isinstance(original_result, dict):
+        if isinstance(original_result, dict) and isinstance(replication_result, dict):
             orig_keys = set(original_result.keys())
             repl_keys = set(replication_result.keys())
 

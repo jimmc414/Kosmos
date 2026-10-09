@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from kosmos.models.experiment import ExperimentProtocol, ExperimentType, Variable, VariableType, ProtocolStep, ResourceRequirements, StatisticalTestSpec
+from kosmos.models.experiment import ExperimentProtocol, ExperimentType, Variable, VariableType, ProtocolStep, ResourceRequirements, StatisticalTest, StatisticalTestSpec
 from kosmos.execution.code_generator import ExperimentCodeGenerator
 from kosmos.execution.executor import CodeExecutor, execute_protocol_code
 from kosmos.models.result import ResultStatus
@@ -71,8 +71,10 @@ def sample_data_file(tmp_path):
     control = np.random.normal(75, 10, 50)
     treatment = np.random.normal(85, 10, 50)
 
+    # Labels match the t-test template's default groups ('control' and
+    # 'experimental'); with any other label the template raises a ValueError.
     df = pd.DataFrame({
-        'group': ['control'] * 50 + ['treatment'] * 50,
+        'group': ['control'] * 50 + ['experimental'] * 50,
         'score': np.concatenate([control, treatment])
     })
 
@@ -102,6 +104,11 @@ class TestEndToEndPipeline:
         )
 
         assert result['success'] is True
+        # The real file was analysed (not the synthetic fallback, and not a
+        # retry wrapper that turned an exception into a 'failed' payload)
+        assert result['data_source'] == 'file'
+        assert result['return_value'].get('status') != 'failed'
+        assert result['return_value']['n'] == 100
 
     def test_pipeline_handles_errors_gracefully(self, ttest_protocol):
         """Test pipeline handles errors at each stage."""
@@ -117,8 +124,13 @@ class TestEndToEndPipeline:
             use_sandbox=False
         )
 
-        # Should fail gracefully
-        assert result['success'] is False or 'error' in result
+        # Should fail gracefully: either a reported failure, or a run that
+        # truthfully labels its data as the synthetic fallback (never 'file')
+        assert isinstance(result, dict)
+        if result['success']:
+            assert result['data_source'] == 'synthetic'
+        else:
+            assert result['error']
 
 
 # Template-Based Generation Tests
@@ -136,6 +148,9 @@ class TestTemplatePipeline:
 
         assert result['success'] is True
         assert result['return_value'] is not None
+        assert result['return_value']['test'] == 'welch_t_test'
+        assert result['return_value']['n_group1'] == 50
+        assert result['return_value']['n_group2'] == 50
 
     def test_correlation_template_pipeline(self, sample_data_file):
         """Test correlation template pipeline."""
@@ -263,9 +278,14 @@ class TestStatisticalPipeline:
 
         result = execute_protocol_code(code, sample_data_file, use_sandbox=False)
 
-        # Should have computed statistics
-        if result['success'] and result['return_value']:
-            assert 'p_value' in result['return_value'] or 't_statistic' in result['return_value']
+        # Should have computed statistics on the file data
+        assert result['success'] is True
+        stats_out = result['return_value']
+        assert 'p_value' in stats_out and 't_statistic' in stats_out
+        assert 0.0 <= stats_out['p_value'] <= 1.0
+        # Seeded data: experimental mean 85 vs control 75, so a clear effect
+        assert stats_out['p_value'] < 0.05
+        assert stats_out['group1_mean'] > stats_out['group2_mean']
 
 
 # Performance Tests

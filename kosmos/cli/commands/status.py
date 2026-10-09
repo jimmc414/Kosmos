@@ -72,6 +72,10 @@ def show_status(
         console.print("\n[warning]Status display cancelled[/warning]")
         raise typer.Exit(130)
 
+    except typer.Exit:
+        # An intentional exit (with its own code) is not a failure to report
+        raise
+
     except Exception as e:
         print_error(f"Failed to get status: {str(e)}")
         raise typer.Exit(1)

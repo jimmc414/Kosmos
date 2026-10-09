@@ -34,9 +34,17 @@ def mock_config():
     config.research.max_iterations = 10
     config.research.enabled_domains = ["biology", "neuroscience"]
     config.research.experiment_types = ["computational", "data_analysis"]
+    config.research.enabled_experiment_types = ["computational", "data_analysis"]
     config.research.budget_usd = None
     config.database.url = "sqlite:///test.db"
     return config
+
+
+@pytest.fixture
+def no_db_init():
+    """Skip the main callback's database setup when get_config is a Mock."""
+    with patch("kosmos.db.init_from_config") as init:
+        yield init
 
 
 @pytest.fixture
@@ -82,7 +90,7 @@ class TestCLIBasicCommands:
         assert "v0.2.0" in result.stdout
 
     @patch("kosmos.config.get_config")
-    def test_info_command(self, mock_get_config, cli_runner, mock_config):
+    def test_info_command(self, mock_get_config, cli_runner, mock_config, no_db_init):
         """Test info command."""
         mock_get_config.return_value = mock_config
 
@@ -91,21 +99,23 @@ class TestCLIBasicCommands:
         assert "System Information" in result.stdout
         assert "Configuration" in result.stdout
 
-    @patch("kosmos.cli.main.importlib.import_module")
-    @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"})
-    def test_doctor_command(self, mock_import, cli_runner):
-        """Test doctor command."""
-        result = cli_runner.invoke(app, ["doctor"])
-        assert result.exit_code == 0
+    def test_doctor_command(self, cli_runner, tmp_path):
+        """Doctor passes on the hermetic test environment (litellm + temp database)."""
+        with patch("kosmos.cli.utils.get_cache_dir", return_value=tmp_path), \
+             patch("kosmos.core.providers.claude_code.ClaudeCodeProvider.cli_version",
+                   return_value="2.0.0 (Claude Code)"):
+            result = cli_runner.invoke(app, ["doctor"])
+        assert result.exit_code == 0, result.output
         assert "Running Diagnostics" in result.stdout
         assert "Diagnostic Results" in result.stdout
+        assert "All checks passed" in result.stdout
 
 
 class TestConfigCommand:
     """Test config command."""
 
     @patch("kosmos.config.get_config")
-    def test_config_show(self, mock_get_config, cli_runner, mock_config):
+    def test_config_show(self, mock_get_config, cli_runner, mock_config, no_db_init):
         """Test config show."""
         mock_get_config.return_value = mock_config
 
@@ -113,6 +123,8 @@ class TestConfigCommand:
         assert result.exit_code == 0
         assert "Current Configuration" in result.stdout
         assert "Claude API Configuration" in result.stdout
+        assert "claude-3-5-sonnet-20241022" in result.stdout
+        assert "computational, data_analysis" in result.stdout
 
     def test_config_path(self, cli_runner):
         """Test config path."""
@@ -121,8 +133,7 @@ class TestConfigCommand:
         assert "Configuration File Locations" in result.stdout
 
     @patch("kosmos.config.get_config")
-    @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key"})
-    def test_config_validate(self, mock_get_config, cli_runner, mock_config):
+    def test_config_validate(self, mock_get_config, cli_runner, mock_config, no_db_init):
         """Test config validate."""
         mock_get_config.return_value = mock_config
 

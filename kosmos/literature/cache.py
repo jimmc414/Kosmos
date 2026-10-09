@@ -7,6 +7,7 @@ and respect rate limits.
 
 import hashlib
 import json
+import os
 import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,6 +15,14 @@ from typing import Any, Optional, Dict
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Relative to the working directory unless KOSMOS_LITERATURE_CACHE_DIR names another place
+# (tests/conftest.py points it into a temp dir so tests never write the repo's cache).
+DEFAULT_CACHE_DIR = ".literature_cache"
+
+
+def _default_cache_dir() -> str:
+    return os.environ.get("KOSMOS_LITERATURE_CACHE_DIR") or DEFAULT_CACHE_DIR
 
 
 class LiteratureCacheError(Exception):
@@ -31,7 +40,7 @@ class LiteratureCache:
 
     def __init__(
         self,
-        cache_dir: str = ".literature_cache",
+        cache_dir: Optional[str] = None,
         ttl_hours: int = 48,
         max_cache_size_mb: int = 1000
     ):
@@ -39,10 +48,12 @@ class LiteratureCache:
         Initialize the literature cache.
 
         Args:
-            cache_dir: Directory to store cache files
+            cache_dir: Directory to store cache files (default: KOSMOS_LITERATURE_CACHE_DIR,
+                else .literature_cache in the working directory)
             ttl_hours: Time-to-live for cached responses in hours (default: 48)
             max_cache_size_mb: Maximum cache directory size in MB
         """
+        cache_dir = cache_dir or _default_cache_dir()
         self.cache_dir = Path(cache_dir)
         self.ttl_hours = ttl_hours
         self.max_cache_size_mb = max_cache_size_mb
@@ -305,7 +316,7 @@ _cache: Optional[LiteratureCache] = None
 
 
 def get_cache(
-    cache_dir: str = ".literature_cache",
+    cache_dir: Optional[str] = None,
     ttl_hours: int = 48,
     max_cache_size_mb: int = 1000
 ) -> LiteratureCache:

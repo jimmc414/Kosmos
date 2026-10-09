@@ -71,7 +71,7 @@ class TestCitationFormatter:
         citation = citation_formatter.format_citation(sample_paper_metadata, style="apa")
 
         assert isinstance(citation, str)
-        assert sample_paper_metadata.authors[0] in citation
+        assert sample_paper_metadata.authors[0].name in citation
         assert str(sample_paper_metadata.year) in citation
         assert sample_paper_metadata.title in citation
 
@@ -149,33 +149,30 @@ class TestCitationNetwork:
         assert len(seminal) <= 3
         assert all(isinstance(item, tuple) for item in seminal)
 
-    def test_calculate_h_index(self, citation_network):
-        """Test H-index calculation."""
-        citation_counts = [100, 80, 60, 40, 20, 10, 5, 1, 1, 1]
-        h_index = citation_network.calculate_h_index(citation_counts)
+    def test_get_citation_path(self, citation_network, sample_papers_list):
+        """A path exists only along citation edges."""
+        import networkx as nx
 
-        assert isinstance(h_index, int)
-        assert h_index > 0
-        assert h_index <= len(citation_counts)
+        graph = nx.DiGraph()
+        graph.add_edges_from([("a", "b"), ("b", "c")])
 
-    def test_find_citation_paths(self, citation_network, sample_papers_list):
-        """Test finding citation paths between papers."""
-        graph = citation_network.build_network(sample_papers_list)
+        assert citation_network.get_citation_path(graph, "a", "c") == ["a", "b", "c"]
+        assert citation_network.get_citation_path(graph, "c", "a") is None
 
-        if graph.number_of_nodes() >= 2:
-            nodes = list(graph.nodes())
-            paths = citation_network.find_citation_paths(graph, nodes[0], nodes[1])
-            assert isinstance(paths, list)
+    def test_analyze_influence(self, citation_network):
+        """Influence metrics report degree, PageRank and betweenness for a node."""
+        import networkx as nx
 
-    def test_get_network_stats(self, citation_network, sample_papers_list):
-        """Test getting network statistics."""
-        graph = citation_network.build_network(sample_papers_list)
-        stats = citation_network.get_network_stats(graph)
+        graph = nx.DiGraph()
+        graph.add_edges_from([("a", "hub"), ("b", "hub"), ("hub", "c")])
 
-        assert isinstance(stats, dict)
-        assert "num_nodes" in stats
-        assert "num_edges" in stats
-        assert stats["num_nodes"] >= len(sample_papers_list)
+        metrics = citation_network.analyze_influence(graph, "hub")
+
+        assert metrics["in_degree"] == 2
+        assert metrics["out_degree"] == 1
+        assert metrics["betweenness_centrality"] > 0
+        assert metrics["pagerank"] > 0
+        assert citation_network.analyze_influence(graph, "missing")["in_degree"] == 0
 
 
 @pytest.mark.unit
@@ -226,6 +223,4 @@ class TestCitationIntegration:
         papers = citation_parser.parse_bibtex(str(sample_bibtex))
         graph = citation_network.build_network(papers)
 
-        assert graph.number_of_nodes() > 0
-        stats = citation_network.get_network_stats(graph)
-        assert stats["num_nodes"] == len(papers)
+        assert graph.number_of_nodes() >= len(papers)

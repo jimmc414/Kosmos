@@ -6,25 +6,25 @@ import pytest
 from unittest.mock import Mock, patch
 
 from kosmos.literature.unified_search import UnifiedLiteratureSearch
-from kosmos.literature.base_client import PaperMetadata
+from kosmos.literature.base_client import PaperMetadata, PaperSource
+
+
+def make_paper(pid, source, title="A Paper", **ids):
+    return PaperMetadata(id=pid, source=source, title=title, abstract="", year=2023, **ids)
 
 
 @pytest.fixture
 def unified_search():
-    """Create UnifiedLiteratureSearch instance."""
-    return UnifiedLiteratureSearch()
-
-
-@pytest.fixture
-def sample_papers_from_sources(sample_papers_list):
-    """Create papers from different sources."""
-    papers = sample_papers_list[:4]
-    papers[0].source = "arxiv"
-    papers[1].source = "semantic_scholar"
-    papers[2].source = "pubmed"
-    papers[3].source = "arxiv"  # Duplicate
-    papers[3].title = papers[0].title  # Same title as first
-    return papers
+    """UnifiedLiteratureSearch with all three sources replaced by mocks."""
+    search = UnifiedLiteratureSearch()
+    search.clients = {
+        PaperSource.ARXIV: Mock(),
+        PaperSource.SEMANTIC_SCHOLAR: Mock(),
+        PaperSource.PUBMED: Mock(),
+    }
+    for client in search.clients.values():
+        client.search.return_value = []
+    return search
 
 
 @pytest.mark.unit
@@ -32,119 +32,74 @@ class TestUnifiedSearchInit:
     """Test unified search initialization."""
 
     def test_init_default(self):
-        """Test default initialization."""
+        """All three sources are enabled by default."""
         search = UnifiedLiteratureSearch()
-        assert search.arxiv_client is not None
-        assert search.s2_client is not None
-        assert search.pubmed_client is not None
+        assert set(search.clients) == {
+            PaperSource.ARXIV, PaperSource.SEMANTIC_SCHOLAR, PaperSource.PUBMED
+        }
 
     def test_init_with_custom_sources(self):
-        """Test initialization with specific sources."""
-        search = UnifiedLiteratureSearch(sources=["arxiv", "semantic_scholar"])
-        assert "arxiv" in search.sources
-        assert "semantic_scholar" in search.sources
-        assert "pubmed" not in search.sources
+        """Disabled sources get no client."""
+        search = UnifiedLiteratureSearch(pubmed_enabled=False)
+        assert PaperSource.ARXIV in search.clients
+        assert PaperSource.SEMANTIC_SCHOLAR in search.clients
+        assert PaperSource.PUBMED not in search.clients
 
 
 @pytest.mark.unit
 class TestUnifiedSearch:
     """Test unified search functionality."""
 
-    @patch('kosmos.literature.arxiv_client.ArxivClient.search')
-    @patch('kosmos.literature.semantic_scholar.SemanticScholarClient.search')
-    @patch('kosmos.literature.pubmed_client.PubMedClient.search')
-    def test_search_all_sources(
-        self, mock_pubmed, mock_s2, mock_arxiv, unified_search, sample_papers_list
-    ):
-        """Test searching across all sources."""
-        # Mock responses from each source
-        mock_arxiv.return_value = [sample_papers_list[0]]
-        mock_s2.return_value = [sample_papers_list[1]]
-        mock_pubmed.return_value = [sample_papers_list[2]]
+    def test_search_all_sources(self, unified_search):
+        """Every enabled source is searched and the results are merged."""
+        clients = unified_search.clients
+        clients[PaperSource.ARXIV].search.return_value = [make_paper("a", PaperSource.ARXIV, "Alpha", arxiv_id="1")]
+        clients[PaperSource.SEMANTIC_SCHOLAR].search.return_value = [make_paper("s", PaperSource.SEMANTIC_SCHOLAR, "Beta", doi="10.1/b")]
+        clients[PaperSource.PUBMED].search.return_value = [make_paper("p", PaperSource.PUBMED, "Gamma", pubmed_id="3")]
 
-        papers = unified_search.search("machine learning", max_results=10)
+        papers = unified_search.search("machine learning", max_results_per_source=10)
 
-        assert len(papers) == 3
-        assert mock_arxiv.called
-        assert mock_s2.called
-        assert mock_pubmed.called
+        assert {p.id for p in papers} == {"a", "s", "p"}
+        assert all(c.search.called for c in clients.values())
 
-    @patch('kosmos.literature.arxiv_client.ArxivClient.search')
-    @patch('kosmos.literature.semantic_scholar.SemanticScholarClient.search')
-    def test_search_specific_sources(
-        self, mock_s2, mock_arxiv, unified_search, sample_papers_list
-    ):
-        """Test searching specific sources only."""
-        mock_arxiv.return_value = [sample_papers_list[0]]
-        mock_s2.return_value = [sample_papers_list[1]]
+    def test_search_specific_sources(self, unified_search):
+        """Only the requested sources are searched."""
+        clients = unified_search.clients
+        clients[PaperSource.ARXIV].search.return_value = [make_paper("a", PaperSource.ARXIV, "Alpha", arxiv_id="1")]
+        clients[PaperSource.SEMANTIC_SCHOLAR].search.return_value = [make_paper("s", PaperSource.SEMANTIC_SCHOLAR, "Beta", doi="10.1/b")]
 
         papers = unified_search.search(
-            "test query", sources=["arxiv", "semantic_scholar"], max_results=10
+            "test query", sources=[PaperSource.ARXIV, PaperSource.SEMANTIC_SCHOLAR]
         )
 
-        assert len(papers) == 2
-        assert mock_arxiv.called
-        assert mock_s2.called
+        assert {p.id for p in papers} == {"a", "s"}
+        assert not clients[PaperSource.PUBMED].search.called
 
-    @patch('kosmos.literature.arxiv_client.ArxivClient.search')
-    @patch('kosmos.literature.semantic_scholar.SemanticScholarClient.search')
-    @patch('kosmos.literature.pubmed_client.PubMedClient.search')
-    def test_deduplication(self, mock_pubmed, mock_s2, mock_arxiv, unified_search):
-        """Test that duplicate papers are removed."""
-        # Create duplicate papers with same DOI
-        paper1 = PaperMetadata(
-            title="Same Paper",
-            authors=["Author"],
-            abstract="Abstract",
-            year=2023,
-            doi="10.1234/same",
-            source="arxiv",
-        )
-        paper2 = PaperMetadata(
-            title="Same Paper",
-            authors=["Author"],
-            abstract="Abstract",
-            year=2023,
-            doi="10.1234/same",
-            source="semantic_scholar",
-        )
+    def test_deduplication(self, unified_search):
+        """The same DOI from two sources is returned once."""
+        clients = unified_search.clients
+        clients[PaperSource.ARXIV].search.return_value = [make_paper("a", PaperSource.ARXIV, "Same Paper", doi="10.1234/same")]
+        clients[PaperSource.SEMANTIC_SCHOLAR].search.return_value = [make_paper("s", PaperSource.SEMANTIC_SCHOLAR, "Same Paper", doi="10.1234/SAME")]
 
-        mock_arxiv.return_value = [paper1]
-        mock_s2.return_value = [paper2]
-        mock_pubmed.return_value = []
+        papers = unified_search.search("test")
 
-        papers = unified_search.search("test", max_results=10)
-
-        # Should only return one paper after deduplication
         assert len(papers) == 1
 
-    @patch('kosmos.literature.arxiv_client.ArxivClient.search')
-    def test_search_with_errors(self, mock_arxiv, unified_search):
-        """Test handling of search errors."""
-        mock_arxiv.side_effect = Exception("API Error")
+    def test_search_with_errors(self, unified_search):
+        """A raising client is isolated: the other sources still return."""
+        clients = unified_search.clients
+        clients[PaperSource.ARXIV].search.side_effect = Exception("API Error")
+        clients[PaperSource.PUBMED].search.return_value = [make_paper("p", PaperSource.PUBMED, "Gamma", pubmed_id="3")]
 
-        # Should return empty list instead of raising
-        papers = unified_search.search("test query", sources=["arxiv"])
-        assert papers == []
+        papers = unified_search.search("test query")
 
+        assert [p.id for p in papers] == ["p"]
 
-@pytest.mark.unit
-class TestUnifiedSearchParallel:
-    """Test parallel search functionality."""
+    def test_search_with_only_a_failing_source(self, unified_search):
+        """Searching only a raising source returns an empty list instead of raising."""
+        unified_search.clients[PaperSource.ARXIV].search.side_effect = Exception("API Error")
 
-    @patch('kosmos.literature.arxiv_client.ArxivClient.search')
-    @patch('kosmos.literature.semantic_scholar.SemanticScholarClient.search')
-    def test_parallel_execution(self, mock_s2, mock_arxiv, unified_search, sample_papers_list):
-        """Test that searches execute in parallel."""
-        mock_arxiv.return_value = [sample_papers_list[0]]
-        mock_s2.return_value = [sample_papers_list[1]]
-
-        papers = unified_search.search("test query", max_results=10, parallel=True)
-
-        assert len(papers) == 2
-        # Both clients should be called
-        assert mock_arxiv.called
-        assert mock_s2.called
+        assert unified_search.search("test query", sources=[PaperSource.ARXIV]) == []
 
 
 @pytest.mark.unit
@@ -152,57 +107,38 @@ class TestUnifiedSearchDeduplication:
     """Test deduplication strategies."""
 
     def test_deduplicate_by_doi(self, unified_search):
-        """Test deduplication by DOI."""
         papers = [
-            PaperMetadata(
-                title="Paper 1", authors=[], abstract="", year=2023,
-                doi="10.1234/test", source="arxiv"
-            ),
-            PaperMetadata(
-                title="Paper 1 Duplicate", authors=[], abstract="", year=2023,
-                doi="10.1234/test", source="semantic_scholar"
-            ),
+            make_paper("1", PaperSource.ARXIV, "Paper 1", doi="10.1234/test"),
+            make_paper("2", PaperSource.SEMANTIC_SCHOLAR, "Paper 1 Duplicate", doi="10.1234/test"),
         ]
-
-        deduplicated = unified_search._deduplicate_papers(papers)
-        assert len(deduplicated) == 1
+        assert len(unified_search._deduplicate_papers(papers)) == 1
 
     def test_deduplicate_by_arxiv_id(self, unified_search):
-        """Test deduplication by arXiv ID."""
         papers = [
-            PaperMetadata(
-                title="Paper 1", authors=[], abstract="", year=2023,
-                arxiv_id="2301.00001", source="arxiv"
-            ),
-            PaperMetadata(
-                title="Paper 1", authors=[], abstract="", year=2023,
-                arxiv_id="2301.00001", source="semantic_scholar"
-            ),
+            make_paper("1", PaperSource.ARXIV, "Paper 1", arxiv_id="2301.00001"),
+            make_paper("2", PaperSource.SEMANTIC_SCHOLAR, "Paper 1", arxiv_id="2301.00001"),
         ]
-
-        deduplicated = unified_search._deduplicate_papers(papers)
-        assert len(deduplicated) == 1
+        assert len(unified_search._deduplicate_papers(papers)) == 1
 
     def test_deduplicate_by_title_similarity(self, unified_search):
-        """Test fuzzy title-based deduplication."""
+        """Titles that differ only in case and punctuation are duplicates."""
         papers = [
-            PaperMetadata(
-                title="Attention Is All You Need", authors=[], abstract="", year=2017,
-                source="arxiv"
-            ),
-            PaperMetadata(
-                title="Attention is All You Need", authors=[], abstract="", year=2017,
-                source="semantic_scholar"
-            ),
+            make_paper("1", PaperSource.ARXIV, "Attention Is All You Need"),
+            make_paper("2", PaperSource.SEMANTIC_SCHOLAR, "Attention is all you need!"),
         ]
+        assert len(unified_search._deduplicate_papers(papers)) == 1
 
-        deduplicated = unified_search._deduplicate_papers(papers)
-        # Should recognize these as duplicates despite minor differences
-        assert len(deduplicated) == 1
+    def test_distinct_titles_are_kept(self, unified_search):
+        papers = [
+            make_paper("1", PaperSource.ARXIV, "Attention Is All You Need"),
+            make_paper("2", PaperSource.ARXIV, "Attention Is Not All You Need"),
+        ]
+        assert len(unified_search._deduplicate_papers(papers)) == 2
 
 
 @pytest.mark.integration
 @pytest.mark.slow
+@pytest.mark.requires_network
 class TestUnifiedSearchIntegration:
     """Integration tests."""
 

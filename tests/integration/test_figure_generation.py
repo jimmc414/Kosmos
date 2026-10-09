@@ -244,83 +244,128 @@ class TestKosmosFiguresColorScheme:
         assert COLORS['black'] == '#000000'
 
 
-class TestFigureInCodeTemplates:
-    """Test figure generation in code templates.
+def _protocol(name, description, variables, control_groups=None, statistical_tests=None):
+    """Build a real ExperimentProtocol for the code templates.
 
-    These tests verify that code templates include figure generation code.
-    Uses mock protocol objects to avoid complex Pydantic validation.
+    The templates read typed protocol fields (random_seed, variable roles and
+    bound columns, test specs), so Mock protocols no longer work.
+    """
+    from kosmos.models.experiment import ExperimentProtocol, ProtocolStep, ResourceRequirements
+    from kosmos.models.hypothesis import ExperimentType
+
+    return ExperimentProtocol(
+        name=name,
+        hypothesis_id="hyp_fig_001",
+        experiment_type=ExperimentType.DATA_ANALYSIS,
+        domain="test_domain",
+        description=description,
+        objective="Verify that figure generation code is emitted",
+        steps=[
+            ProtocolStep(
+                step_number=1,
+                title="Analyze data",
+                description="Run the analysis and save the figure",
+                action="Run the analysis",
+            )
+        ],
+        variables=variables,
+        control_groups=control_groups or [],
+        statistical_tests=statistical_tests or [],
+        random_seed=42,
+        resource_requirements=ResourceRequirements(),
+    )
+
+
+def _var(name, var_type):
+    from kosmos.models.experiment import Variable, VariableType
+
+    return Variable(
+        name=name,
+        type=VariableType(var_type),
+        description=f"Test variable {name} for figure generation",
+    )
+
+
+class TestFigureInCodeTemplates:
+    """Code templates no longer embed figure generation.
+
+    Plan items P0-5 (commit 7c832a6) and P0-6 (commit 3be9bc2) deleted the dead
+    PublicationVisualizer blocks from the TTest, Correlation and LogLog templates:
+    generated code runs in the sandbox, where the kosmos package is not
+    installed, so it must be self-contained (numpy/scipy/pandas only). Figures
+    are drawn on the host with PublicationVisualizer (tested above). These tests
+    pin that contract: no kosmos import, the inline statistics are present, and
+    the code compiles.
     """
 
-    def test_ttest_template_includes_figure(self):
-        """Test T-test template generates figure code."""
+    def test_ttest_template_is_self_contained(self):
+        """T-test template emits inline scipy code and no kosmos/figure import."""
         from kosmos.execution.code_generator import TTestComparisonCodeTemplate
-        from unittest.mock import Mock
-        from kosmos.models.experiment import ExperimentType
+        from kosmos.models.experiment import ControlGroup
 
-        # Create mock protocol
-        mock_var = Mock()
-        mock_var.type.value = 'independent'
-        mock_var.name = 'group'
-
-        mock_dep_var = Mock()
-        mock_dep_var.type.value = 'dependent'
-        mock_dep_var.name = 'value'
-
-        mock_control = Mock()
-        mock_control.name = 'control'
-
-        protocol = Mock()
-        protocol.name = "Test Protocol"
-        protocol.experiment_type = ExperimentType.DATA_ANALYSIS
-        protocol.variables = {'group': mock_var, 'value': mock_dep_var}
-        protocol.control_groups = [mock_control]
-        protocol.steps = []
+        protocol = _protocol(
+            name="Test Protocol",
+            description="Two-group comparison protocol used to test figure generation code",
+            variables={'group': _var('group', 'independent'), 'value': _var('value', 'dependent')},
+            control_groups=[
+                ControlGroup(
+                    name='control',
+                    description="Control group for the comparison",
+                    variables={'group': 'control'},
+                    rationale="Baseline condition for the two-group comparison",
+                )
+            ],
+        )
 
         template = TTestComparisonCodeTemplate()
         code = template.generate(protocol)
 
-        assert 'PublicationVisualizer' in code
-        assert 'box_plot_with_points' in code
-        assert 'figure_path' in code
+        assert 'kosmos' not in code
+        assert 'PublicationVisualizer' not in code
+        assert 'ttest_ind' in code
+        compile(code, '<ttest_template>', 'exec')
 
-    def test_correlation_template_includes_figure(self):
-        """Test correlation template generates figure code."""
+    def test_correlation_template_is_self_contained(self):
+        """Correlation template emits inline scipy code and no kosmos/figure import."""
         from kosmos.execution.code_generator import CorrelationAnalysisCodeTemplate
-        from unittest.mock import Mock
-        from kosmos.models.experiment import ExperimentType
+        from kosmos.models.experiment import StatisticalTest, StatisticalTestSpec
 
-        # Create mock protocol
-        mock_test = Mock()
-        mock_test.test_type.value = 'correlation'
-
-        protocol = Mock()
-        protocol.name = "Correlation Analysis"
-        protocol.experiment_type = ExperimentType.DATA_ANALYSIS
-        protocol.variables = {'x': Mock(), 'y': Mock()}
-        protocol.statistical_tests = [mock_test]
+        protocol = _protocol(
+            name="Correlation Analysis",
+            description="Correlation protocol between x and y used to test figure generation",
+            variables={'x': _var('x', 'independent'), 'y': _var('y', 'dependent')},
+            statistical_tests=[
+                StatisticalTestSpec(
+                    test_type=StatisticalTest.CORRELATION,
+                    description="Pearson correlation between x and y",
+                    null_hypothesis="H0: x and y are uncorrelated",
+                    variables=['x', 'y'],
+                )
+            ],
+        )
 
         template = CorrelationAnalysisCodeTemplate()
         code = template.generate(protocol)
 
-        assert 'PublicationVisualizer' in code
-        assert 'scatter_with_regression' in code
-        assert 'figure_path' in code
+        assert 'kosmos' not in code
+        assert 'PublicationVisualizer' not in code
+        assert 'pearsonr' in code
+        compile(code, '<correlation_template>', 'exec')
 
-    def test_log_log_template_includes_figure(self):
-        """Test log-log template generates figure code."""
+    def test_log_log_template_is_self_contained(self):
+        """Log-log template emits inline numpy/scipy code and no kosmos/figure import."""
         from kosmos.execution.code_generator import LogLogScalingCodeTemplate
-        from unittest.mock import Mock
-        from kosmos.models.experiment import ExperimentType
 
-        protocol = Mock()
-        protocol.name = "Power Law Scaling"
-        protocol.description = "Power law scaling analysis"
-        protocol.experiment_type = ExperimentType.DATA_ANALYSIS
-        protocol.variables = {'x': Mock(), 'y': Mock()}
+        protocol = _protocol(
+            name="Power Law Scaling",
+            description="Power law scaling analysis of y against x on log-log axes",
+            variables={'x': _var('x', 'independent'), 'y': _var('y', 'dependent')},
+        )
 
         template = LogLogScalingCodeTemplate()
         code = template.generate(protocol)
 
-        assert 'PublicationVisualizer' in code
-        assert 'log_log_plot' in code
-        assert 'figure_path' in code
+        assert 'kosmos' not in code
+        assert 'PublicationVisualizer' not in code
+        assert 'log10' in code
+        compile(code, '<log_log_template>', 'exec')

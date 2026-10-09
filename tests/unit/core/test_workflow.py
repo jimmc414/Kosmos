@@ -3,7 +3,7 @@ Unit tests for workflow state machine (Phase 7).
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from kosmos.core.workflow import (
     WorkflowState,
@@ -364,6 +364,10 @@ class TestResearchWorkflow:
         assert workflow_dict["current_state"] == WorkflowState.DESIGNING_EXPERIMENTS.value
         assert workflow_dict["transition_count"] == 2
         assert len(workflow_dict["recent_transitions"]) == 2
+        first = workflow_dict["recent_transitions"][0]
+        assert first["from"] == WorkflowState.INITIALIZING.value
+        assert first["to"] == WorkflowState.GENERATING_HYPOTHESES.value
+        assert first["action"] == "Gen"
 
     def test_get_state_duration(self):
         """Test calculating time spent in state."""
@@ -373,7 +377,7 @@ class TestResearchWorkflow:
         workflow.transition_to(WorkflowState.GENERATING_HYPOTHESES, "Gen")
 
         # Manually set timestamp to simulate time passage
-        workflow.transition_history[0].timestamp = datetime.utcnow() - timedelta(seconds=10)
+        workflow.transition_history[0].timestamp = datetime.now(timezone.utc) - timedelta(seconds=10)
 
         workflow.transition_to(WorkflowState.DESIGNING_EXPERIMENTS, "Design")
 

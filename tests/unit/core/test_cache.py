@@ -8,7 +8,8 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from kosmos.core.cache import (
     InMemoryCache as MemoryCache,
@@ -16,6 +17,18 @@ from kosmos.core.cache import (
     HybridCache,
     CacheStats,
 )
+
+
+def _set_in_past(cache, key, value, hours_ago=2):
+    """Store `value` as if it had been cached `hours_ago` hours earlier.
+
+    TTL is per cache instance (ttl_seconds); there is no per-call ttl, so an
+    expired entry is produced by back-dating the clock used by set().
+    """
+    past = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+    with patch("kosmos.core.cache.datetime") as mock_dt:
+        mock_dt.now.return_value = past
+        assert cache.set(key, value) is True
 
 
 class TestMemoryCache:
@@ -35,11 +48,14 @@ class TestMemoryCache:
 
     def test_ttl_expiration(self):
         """Test TTL expiration."""
-        cache = MemoryCache(max_size=100)
+        cache = MemoryCache(max_size=100, ttl_seconds=3600)
 
-        # Set with 0 second TTL (should expire immediately)
-        cache.set("key1", "value1", ttl=0)
+        # Entry cached two hours ago with a one-hour TTL has expired
+        _set_in_past(cache, "key1", "value1")
+        cache.set("key2", "value2")
+
         assert cache.get("key1") is None
+        assert cache.get("key2") == "value2"
 
     def test_delete(self):
         """Test deletion."""
@@ -119,7 +135,7 @@ class TestDiskCache:
 
     def test_set_and_get(self, temp_cache_dir):
         """Test basic set and get operations."""
-        cache = DiskCache(cache_dir=temp_cache_dir, max_size=1024*1024)
+        cache = DiskCache(cache_dir=temp_cache_dir, max_size_mb=1)
 
         cache.set("key1", {"data": "value1"})
         result = cache.get("key1")
@@ -128,41 +144,45 @@ class TestDiskCache:
 
     def test_persistence(self, temp_cache_dir):
         """Test data persists across cache instances."""
-        cache1 = DiskCache(cache_dir=temp_cache_dir, max_size=1024*1024)
+        cache1 = DiskCache(cache_dir=temp_cache_dir, max_size_mb=1)
         cache1.set("key1", "value1")
 
         # Create new cache instance with same directory
-        cache2 = DiskCache(cache_dir=temp_cache_dir, max_size=1024*1024)
+        cache2 = DiskCache(cache_dir=temp_cache_dir, max_size_mb=1)
         assert cache2.get("key1") == "value1"
 
     def test_ttl_expiration(self, temp_cache_dir):
         """Test TTL expiration on disk."""
-        cache = DiskCache(cache_dir=temp_cache_dir, max_size=1024*1024)
+        cache = DiskCache(cache_dir=temp_cache_dir, ttl_seconds=3600, max_size_mb=1)
 
-        cache.set("key1", "value1", ttl=0)
+        _set_in_past(cache, "key1", "value1")
         assert cache.get("key1") is None
+        # The expired file is removed on read
+        assert cache.size() == 0
 
     def test_file_creation(self, temp_cache_dir):
         """Test cache files are created."""
-        cache = DiskCache(cache_dir=temp_cache_dir, max_size=1024*1024)
+        cache = DiskCache(cache_dir=temp_cache_dir, max_size_mb=1)
 
         cache.set("test_key", "test_value")
 
-        # Check file exists
-        cache_files = list(temp_cache_dir.glob("*.cache"))
-        assert len(cache_files) > 0
+        # Files are pickles stored under a two-character subdirectory
+        cache_files = list(temp_cache_dir.rglob("*.pkl"))
+        assert len(cache_files) == 1
+        assert cache_files[0] == temp_cache_dir / "te" / "test_key.pkl"
 
     def test_cleanup_expired(self, temp_cache_dir):
         """Test cleanup of expired entries."""
-        cache = DiskCache(cache_dir=temp_cache_dir, max_size=1024*1024)
+        cache = DiskCache(cache_dir=temp_cache_dir, ttl_seconds=3600, max_size_mb=1)
 
-        # Set with immediate expiration
-        cache.set("expired", "value", ttl=0)
-        cache.set("valid", "value", ttl=3600)
+        # One entry back-dated beyond the TTL, one fresh
+        _set_in_past(cache, "expired", "value")
+        cache.set("valid", "value")
 
-        # Cleanup should remove expired
-        cache._cleanup()
+        # Cleanup should remove only the expired entry
+        assert cache.cleanup_expired() == 1
 
+        assert cache.size() == 1
         assert cache.get("expired") is None
         assert cache.get("valid") == "value"
 
@@ -180,9 +200,9 @@ class TestHybridCache:
     def test_memory_then_disk(self, temp_cache_dir):
         """Test hybrid cache checks memory first, then disk."""
         cache = HybridCache(
-            memory_max_size=100,
-            disk_cache_dir=temp_cache_dir,
-            disk_max_size=1024*1024
+            memory_size=100,
+            cache_dir=str(temp_cache_dir),
+            max_size_mb=1
         )
 
         # Set in cache (should go to memory)
@@ -196,13 +216,15 @@ class TestHybridCache:
 
         # Should still get value from disk
         assert cache.get("key1") == "value1"
+        # ...and the disk hit is promoted back into memory
+        assert cache.memory_cache.get("key1") == "value1"
 
     def test_stats_aggregation(self, temp_cache_dir):
         """Test stats aggregate from both caches."""
         cache = HybridCache(
-            memory_max_size=100,
-            disk_cache_dir=temp_cache_dir,
-            disk_max_size=1024*1024
+            memory_size=100,
+            cache_dir=str(temp_cache_dir),
+            max_size_mb=1
         )
 
         cache.set("key1", "value1")
@@ -210,6 +232,8 @@ class TestHybridCache:
 
         stats = cache.get_stats()
         assert stats["hits"] > 0
+        assert stats["memory_cache"]["hits"] > 0
+        assert "disk_cache" in stats
 
 
 @pytest.mark.skip(reason="CacheManager class not implemented")

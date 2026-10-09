@@ -66,6 +66,8 @@ class CitationParser:
             logger.info(f"Parsed {len(papers)} papers from {file_path}")
             return papers
 
+        except FileNotFoundError:
+            raise
         except Exception as e:
             logger.error(f"BibTeX parsing failed: {e}")
             return []
@@ -135,6 +137,8 @@ class CitationParser:
             logger.info(f"Parsed {len(papers)} papers from {file_path}")
             return papers
 
+        except FileNotFoundError:
+            raise
         except Exception as e:
             logger.error(f"RIS parsing failed: {e}")
             return []
@@ -554,12 +558,15 @@ class CitationFormatter:
         if paper.title:
             parts.append(f'"{paper.title},"')
 
-        # Journal
-        if paper.journal:
-            journal_str = f"*{paper.journal}*"
+        # Journal (or venue), then year
+        venue = paper.journal or paper.venue
+        if venue:
+            journal_str = f"*{venue}*"
             if paper.year:
                 journal_str += f", {paper.year}"
             parts.append(journal_str + ".")
+        elif paper.year:
+            parts.append(f"{paper.year}.")
 
         return " ".join(parts)
 

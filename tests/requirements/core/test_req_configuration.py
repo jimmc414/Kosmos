@@ -316,13 +316,13 @@ class TestREQ_CFG_003_DefaultValues:
 
     def test_claude_defaults(self):
         """Verify Claude configuration has sensible defaults."""
-        from kosmos.config import ClaudeConfig
+        from kosmos.config import ClaudeConfig, _DEFAULT_CLAUDE_MODEL
 
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'sk-ant-test'}):
             config = ClaudeConfig()
 
-            # Check default values
-            assert config.model == "claude-3-5-sonnet-20241022"
+            # Check default values (the pinned default, not a dated model name)
+            assert config.model == _DEFAULT_CLAUDE_MODEL
             assert config.max_tokens == 4096
             assert config.temperature == 0.7
             assert config.enable_cache is True
@@ -342,7 +342,10 @@ class TestREQ_CFG_003_DefaultValues:
         """Verify database configuration has sensible defaults."""
         from kosmos.config import DatabaseConfig
 
-        config = DatabaseConfig()
+        # tests/conftest.py points DATABASE_URL at a temp dir; the default shows without it
+        with patch.dict(os.environ):
+            os.environ.pop('DATABASE_URL', None)
+            config = DatabaseConfig()
 
         assert config.url == 'sqlite:///kosmos.db'
         assert config.echo is False
@@ -483,8 +486,11 @@ class TestREQ_CFG_004_ParameterDocumentation:
 
         fields = ClaudeConfig.model_fields
 
-        # Fields should have clear aliases matching env vars
-        assert fields['api_key'].alias == 'ANTHROPIC_API_KEY'
+        # Fields should have clear aliases matching env vars; the key accepts
+        # KOSMOS_ANTHROPIC_API_KEY first, then ANTHROPIC_API_KEY (A-2)
+        assert fields['api_key'].validation_alias.choices == [
+            'KOSMOS_ANTHROPIC_API_KEY', 'ANTHROPIC_API_KEY'
+        ]
         assert fields['model'].alias == 'CLAUDE_MODEL'
         assert fields['max_tokens'].alias == 'CLAUDE_MAX_TOKENS'
 

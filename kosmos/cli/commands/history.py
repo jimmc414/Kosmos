@@ -86,6 +86,10 @@ def show_history(
         console.print("\n[warning]History display cancelled[/warning]")
         raise typer.Exit(130)
 
+    except typer.Exit:
+        # An intentional exit (with its own code) is not a failure to report
+        raise
+
     except Exception as e:
         print_error(f"Failed to get history: {str(e)}")
         raise typer.Exit(1)

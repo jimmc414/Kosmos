@@ -17,9 +17,8 @@ def setup_integration_env():
     os.environ['NEO4J_PASSWORD'] = 'kosmos-password'
     os.environ['NEO4J_DATABASE'] = 'neo4j'
 
-    # Ensure Anthropic API key is set (use Claude Code proxy)
-    if not os.getenv('ANTHROPIC_API_KEY'):
-        os.environ['ANTHROPIC_API_KEY'] = '999999999999999999999999999999999999999999999999'
+    # Provider settings come from tests/conftest.py (litellm with a placeholder key);
+    # ANTHROPIC_API_KEY is never set (MAP D-19).
 
     # Force config reload to pick up new environment variables
     from kosmos.config import get_config

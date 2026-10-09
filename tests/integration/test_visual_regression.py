@@ -164,13 +164,22 @@ class TestFormattingPreservation:
             output_path=panel_path
         )
 
-        # Panel plots should be larger files due to DPI 600
-        standard_size = os.path.getsize(standard_path)
-        panel_size = os.path.getsize(panel_path)
+        # Read the DPI recorded in each PNG's pHYs chunk instead of comparing
+        # byte sizes (compression makes file size an unreliable DPI proxy).
+        from PIL import Image
 
-        # Panel should be significantly larger (rough heuristic)
-        # (600/300)^2 = 4x, but compression makes it less than 4x
-        assert panel_size > standard_size * 1.5
+        with Image.open(standard_path) as img:
+            standard_dpi = img.info.get('dpi')
+        with Image.open(panel_path) as img:
+            panel_dpi = img.info.get('dpi')
+
+        assert standard_dpi is not None
+        assert panel_dpi is not None
+        # PIL converts pixels-per-metre back to DPI, so allow rounding error
+        assert standard_dpi[0] == pytest.approx(300, abs=1)
+        assert standard_dpi[1] == pytest.approx(300, abs=1)
+        assert panel_dpi[0] == pytest.approx(600, abs=1)
+        assert panel_dpi[1] == pytest.approx(600, abs=1)
 
 
 # Color Scheme Tests

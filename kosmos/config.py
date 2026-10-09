@@ -5,9 +5,10 @@ Loads configuration from environment variables and provides validated settings
 for all Kosmos components.
 """
 
+import json
 from typing import List, Optional, Literal, Union, Annotated
 from pydantic import AliasChoices, Field, field_validator, model_validator, BeforeValidator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from pathlib import Path
 import os
 
@@ -37,6 +38,12 @@ def parse_comma_separated(v):
     if v is None or v == "":
         return None  # Let field default handle it
     if isinstance(v, str):
+        # NoDecode hands the raw env string over, so accept a JSON list as well
+        if v.strip().startswith("["):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                pass
         return [x.strip() for x in v.split(',') if x.strip()]
     return v
 
@@ -230,12 +237,12 @@ class ResearchConfig(BaseSettings):
         description="Maximum research iterations",
         alias="MAX_RESEARCH_ITERATIONS"
     )
-    enabled_domains: Annotated[List[str], BeforeValidator(parse_comma_separated)] = Field(
+    enabled_domains: Annotated[List[str], NoDecode, BeforeValidator(parse_comma_separated)] = Field(
         default=["biology", "physics", "chemistry", "neuroscience"],
         description="Enabled scientific domains",
         alias="ENABLED_DOMAINS"
     )
-    enabled_experiment_types: Annotated[List[str], BeforeValidator(parse_comma_separated)] = Field(
+    enabled_experiment_types: Annotated[List[str], NoDecode, BeforeValidator(parse_comma_separated)] = Field(
         default=["computational", "data_analysis", "literature_synthesis"],
         description="Enabled experiment types",
         alias="ENABLED_EXPERIMENT_TYPES"
@@ -421,7 +428,7 @@ class LoggingConfig(BaseSettings):
         alias="DEBUG_LEVEL"
     )
 
-    debug_modules: Annotated[Optional[List[str]], BeforeValidator(parse_comma_separated)] = Field(
+    debug_modules: Annotated[Optional[List[str]], NoDecode, BeforeValidator(parse_comma_separated)] = Field(
         default=None,
         description="Modules to debug (None=all when debug_mode=True)",
         alias="DEBUG_MODULES"
