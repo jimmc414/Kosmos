@@ -7,7 +7,6 @@ Provides:
 - Semantic search
 - Knowledge graph (Neo4j)
 - Concept extraction (Claude)
-- Graph building and visualization
 """
 
 # Embeddings
@@ -47,22 +46,6 @@ from kosmos.knowledge.concept_extractor import (
     reset_concept_extractor
 )
 
-# Graph building
-from kosmos.knowledge.graph_builder import (
-    GraphBuilder,
-    get_graph_builder,
-    reset_graph_builder
-)
-
-# Graph visualization
-from kosmos.knowledge.graph_visualizer import (
-    GraphVisualizer,
-    LayoutAlgorithm,
-    VisualizationMode,
-    get_graph_visualizer,
-    reset_graph_visualizer
-)
-
 # Domain knowledge base (unified ontologies)
 from kosmos.knowledge.domain_kb import (
     DomainKnowledgeBase,
@@ -94,16 +77,6 @@ __all__ = [
     "ExtractionResult",
     "get_concept_extractor",
     "reset_concept_extractor",
-    # Graph building
-    "GraphBuilder",
-    "get_graph_builder",
-    "reset_graph_builder",
-    # Visualization
-    "GraphVisualizer",
-    "LayoutAlgorithm",
-    "VisualizationMode",
-    "get_graph_visualizer",
-    "reset_graph_visualizer",
     # Domain knowledge base
     "DomainKnowledgeBase",
     "Domain",

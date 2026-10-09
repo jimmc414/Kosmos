@@ -227,7 +227,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["kosmos"]
-omit = ["*/tests/*", "*/test_*.py"]
+omit = ["*/tests/*", "*/test_*.py", "archive/*"]
 
 [tool.coverage.report]
 exclude_lines = [

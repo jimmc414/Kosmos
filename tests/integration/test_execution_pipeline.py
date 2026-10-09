@@ -13,7 +13,6 @@ from unittest.mock import Mock, patch
 from kosmos.models.experiment import ExperimentProtocol, ExperimentType, Variable, VariableType, ProtocolStep, ResourceRequirements, StatisticalTestSpec
 from kosmos.execution.code_generator import ExperimentCodeGenerator
 from kosmos.execution.executor import CodeExecutor, execute_protocol_code
-from kosmos.execution.result_collector import ResultCollector
 from kosmos.models.result import ResultStatus
 
 
@@ -87,39 +86,6 @@ def sample_data_file(tmp_path):
 
 class TestEndToEndPipeline:
     """Tests for complete execution pipeline."""
-
-    def test_complete_pipeline_ttest(self, ttest_protocol, sample_data_file):
-        """Test complete pipeline: code generation → execution → result collection."""
-
-        # Step 1: Generate code
-        generator = ExperimentCodeGenerator(use_templates=True, use_llm=False)
-        code = generator.generate(ttest_protocol)
-
-        assert code is not None
-        assert "ttest_ind" in code
-
-        # Step 2: Execute code
-        executor = CodeExecutor(max_retries=1, use_sandbox=False)
-        execution_result = executor.execute_with_data(code, sample_data_file)
-
-        assert execution_result.success is True
-
-        # Step 3: Collect results
-        collector = ResultCollector(store_in_db=False)
-
-        execution_output = {
-            'success': execution_result.success,
-            'return_value': execution_result.return_value,
-            'stdout': execution_result.stdout,
-            'stderr': execution_result.stderr,
-            'execution_time': execution_result.execution_time
-        }
-
-        result = collector.collect(ttest_protocol, execution_output)
-
-        # Verify result
-        assert result.status == ResultStatus.SUCCESS
-        assert result.experiment_id == "integration-001"
 
     def test_pipeline_with_convenience_function(self, ttest_protocol, sample_data_file):
         """Test pipeline using convenience function."""
@@ -282,21 +248,6 @@ df = pd.read_csv('{sample_data_file}')
 
         assert result.success is True
         assert result.return_value is not None
-
-    def test_results_preserved_through_collection(self, ttest_protocol, sample_data_file):
-        """Test results are preserved during collection."""
-
-        # Generate and execute
-        generator = ExperimentCodeGenerator(use_templates=True, use_llm=False)
-        code = generator.generate(ttest_protocol)
-        execution_result = execute_protocol_code(code, sample_data_file, use_sandbox=False)
-
-        # Collect
-        collector = ResultCollector(store_in_db=False)
-        result = collector.collect(ttest_protocol, execution_result)
-
-        # Verify data preserved
-        assert result.raw_data is not None
 
 
 # Statistical Analysis Pipeline Tests

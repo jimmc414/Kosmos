@@ -13,7 +13,6 @@ from typing import Dict, Any, List, Tuple
 from unittest.mock import Mock, patch, MagicMock
 from scipy import stats as scipy_stats
 
-from kosmos.analysis.statistics import DescriptiveStats, DistributionAnalysis
 
 # Test markers for requirements traceability
 pytestmark = [

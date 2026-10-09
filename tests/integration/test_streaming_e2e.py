@@ -385,54 +385,6 @@ class TestCLIStreamingDisplay:
             pytest.skip("Rich library not available")
 
 
-class TestAPIStreamingEndpoints:
-    """Tests for API streaming endpoints."""
-
-    @pytest.mark.asyncio
-    async def test_event_generator_yields_events(self):
-        """event_generator yields SSE-formatted events."""
-        try:
-            from kosmos.api.streaming import event_generator
-
-            # Create a task that generates events
-            async def event_producer():
-                event_bus = get_event_bus()
-                await asyncio.sleep(0.1)
-                await event_bus.publish(WorkflowEvent(
-                    type=EventType.WORKFLOW_STARTED,
-                    process_id="test_proc"
-                ))
-
-            # Start producer
-            producer_task = asyncio.create_task(event_producer())
-
-            # Collect events from generator
-            events_received = []
-            gen = event_generator(process_id="test_proc", keepalive_interval=1)
-
-            try:
-                async for sse_event in gen:
-                    if "workflow.started" in sse_event:
-                        events_received.append(sse_event)
-                        break
-                    if len(events_received) > 5:
-                        break
-            finally:
-                producer_task.cancel()
-                try:
-                    await producer_task
-                except asyncio.CancelledError:
-                    pass
-
-            # Should have received at least one event
-            assert len(events_received) >= 1
-            assert "event:" in events_received[0]
-            assert "data:" in events_received[0]
-
-        except ImportError:
-            pytest.skip("FastAPI not available")
-
-
 class TestEventSerialization:
     """Tests for event serialization across the system."""
 

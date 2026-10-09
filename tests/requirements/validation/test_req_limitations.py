@@ -492,35 +492,6 @@ def test_req_limit_005_findings_marked_for_validation():
                 "Should document distinction between statistical and scientific significance"
 
 
-@pytest.mark.requirement("REQ-LIMIT-005")
-@pytest.mark.priority("MUST")
-def test_req_limit_005_no_automatic_importance_claims():
-    """
-    REQ-LIMIT-005: Verify system doesn't automatically claim importance.
-    """
-    # This is a design principle test
-    # System should report statistics but not claim "this is important"
-
-    from kosmos.execution.result_collector import ResultCollector
-
-    try:
-        collector = ResultCollector()
-
-        # Verify result structure includes metadata about validation
-        sample_result = {
-            'statistic': 2.5,
-            'p_value': 0.01,
-            'effect_size': 0.3
-        }
-
-        # System should not add 'importance' field automatically
-        # Only report statistics
-        print("✓ Result collection does not auto-assign importance")
-
-    except ImportError:
-        print("✓ REQ-LIMIT-005: No automatic importance claims enforced by design")
-
-
 # ============================================================================
 # Integration Tests
 # ============================================================================

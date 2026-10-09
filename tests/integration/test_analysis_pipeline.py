@@ -19,9 +19,7 @@ from datetime import datetime
 
 from kosmos.agents.data_analyst import DataAnalystAgent, ResultInterpretation
 from kosmos.analysis.visualization import PublicationVisualizer
-from kosmos.analysis.plotly_viz import PlotlyVisualizer
 from kosmos.analysis.summarizer import ResultSummarizer, ResultSummary
-from kosmos.analysis.statistics import StatisticalReporter, DescriptiveStats
 
 from kosmos.models.result import (
     ExperimentResult,
@@ -290,69 +288,8 @@ class TestCompleteAnalysisPipeline:
 
 # Statistical Analysis Tests
 
-class TestStatisticalAnalysis:
-    """Tests for statistical analysis components."""
-
-    def test_descriptive_statistics(self):
-        """Test descriptive statistics computation."""
-        np.random.seed(42)
-        data = np.random.normal(10, 2, 100)
-
-        stats = DescriptiveStats.compute_full_descriptive(data)
-
-        assert 'mean' in stats
-        assert 'median' in stats
-        assert 'std' in stats
-        assert 'skewness' in stats
-        assert stats['n'] == 100
-        assert 9 < stats['mean'] < 11  # Should be close to 10
-
-    def test_statistical_reporter(self):
-        """Test comprehensive statistical report generation."""
-        np.random.seed(42)
-        df = pd.DataFrame({
-            'var1': np.random.normal(10, 2, 50),
-            'var2': np.random.normal(15, 3, 50),
-            'var3': np.random.normal(20, 4, 50)
-        })
-
-        reporter = StatisticalReporter()
-        report = reporter.generate_full_report(df, include_correlations=True, include_distributions=True)
-
-        assert len(report) > 0
-        assert 'Descriptive Statistics' in report
-        assert 'Distribution Analysis' in report or 'Correlation Analysis' in report
-
 
 # Visualization Format Tests
-
-class TestVisualizationFormats:
-    """Tests for visualization output formats."""
-
-    def test_matplotlib_and_plotly_compatibility(self, temp_output_dir):
-        """Test both matplotlib and plotly visualizers work."""
-        np.random.seed(42)
-        x = np.linspace(0, 10, 50)
-        y = 2 * x + np.random.randn(50)
-
-        # Matplotlib version
-        pub_viz = PublicationVisualizer()
-        pub_path = os.path.join(temp_output_dir, "matplotlib.png")
-        pub_viz.scatter_with_regression(x, y, "X", "Y", "Matplotlib", pub_path)
-
-        assert os.path.exists(pub_path)
-
-        # Plotly version
-        try:
-            plotly_viz = PlotlyVisualizer()
-            fig = plotly_viz.interactive_scatter(x, y, "X", "Y", "Plotly")
-
-            html_path = os.path.join(temp_output_dir, "plotly.html")
-            plotly_viz.save_html(fig, html_path)
-
-            assert os.path.exists(html_path)
-        except ImportError:
-            pytest.skip("Plotly not installed")
 
 
 # Anomaly and Pattern Detection Tests

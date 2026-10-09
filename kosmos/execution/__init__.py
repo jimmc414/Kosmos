@@ -8,25 +8,11 @@ Components:
 - DockerManager: Container lifecycle management with pooling
 - JupyterClient: Code execution with output capture
 - PackageResolver: Automatic dependency detection and installation
-- ProductionExecutor: Main executor combining all components
+- DockerSandbox, CodeExecutor: the execution path the research director uses
 
-Basic Usage:
-    from kosmos.execution import ProductionExecutor, ProductionConfig
+ProductionExecutor was archived to archive/code/ (VIAB#P3-4): nothing ran it.
 
-    async def run():
-        executor = ProductionExecutor()
-        await executor.initialize()
-
-        result = await executor.execute_code('''
-            import pandas as pd
-            df = pd.DataFrame({'x': [1, 2, 3]})
-            results = {'sum': df['x'].sum()}
-        ''')
-
-        print(result.return_value)  # {'sum': 6}
-        await executor.cleanup()
-
-Legacy Usage (existing sandbox):
+Usage:
     from kosmos.execution import DockerSandbox, CodeExecutor
 
     # Direct sandbox usage
@@ -38,7 +24,7 @@ Legacy Usage (existing sandbox):
     result = executor.execute("x = 1 + 1")
 """
 
-# Production executor components (new)
+# Container, kernel and package helpers
 from .docker_manager import (
     DockerManager,
     ContainerConfig,
@@ -61,12 +47,6 @@ from .package_resolver import (
     is_stdlib_module,
     IMPORT_TO_PIP,
     STDLIB_MODULES,
-)
-
-from .production_executor import (
-    ProductionExecutor,
-    ProductionConfig,
-    execute_code_safely,
 )
 
 # Legacy components (existing)
@@ -95,11 +75,6 @@ from .provenance import (
 
 # Re-export commonly used items at package level
 __all__ = [
-    # Production executor (recommended)
-    "ProductionExecutor",
-    "ProductionConfig",
-    "execute_code_safely",
-
     # Docker management
     "DockerManager",
     "ContainerConfig",

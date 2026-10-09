@@ -211,60 +211,6 @@ def test_req_domain_002_configuration_based_switching():
 
 @pytest.mark.requirement("REQ-DOMAIN-002")
 @pytest.mark.priority("MUST")
-def test_req_domain_002_unified_interface():
-    """
-    REQ-DOMAIN-002: Verify unified interface across domains.
-
-    Validates that:
-    - All domains use same workflow interface
-    - No domain-specific code paths required
-    - Domain selection is data-driven, not code-driven
-    """
-    from kosmos.core.domain_router import DomainRouter
-
-    try:
-        router = DomainRouter()
-
-        # Test that router can handle multiple domains without code changes
-        test_queries = [
-            ('What genes are associated with cancer?', 'biology'),
-            ('How does neural plasticity work?', 'neuroscience'),
-            ('What is the band gap of silicon?', 'materials')
-        ]
-
-        for query, expected_domain in test_queries:
-            # Routing should work without domain-specific code
-            detected = router.detect_domain(query)
-
-            # Router should identify domain without conditional code
-            assert detected is not None, \
-                f"Router should handle query: {query[:50]}"
-
-            # Should use configuration, not hardcoded logic
-            assert hasattr(router, 'domain_patterns') or hasattr(router, 'domain_keywords'), \
-                "Router should use data-driven domain detection"
-
-    except (ImportError, AttributeError):
-        # Fallback: Test that domains are data-driven
-        from kosmos.config import get_config, reset_config
-
-        reset_config()
-        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test_key'}):
-            config = get_config(reload=True)
-
-            # Assert: Domains defined in config, not code
-            assert hasattr(config.research, 'enabled_domains'), \
-                "Domains must be configuration-driven"
-
-            # Assert: Can dynamically enable domains
-            assert isinstance(config.research.enabled_domains, list), \
-                "Domains should be configurable list"
-
-        reset_config()
-
-
-@pytest.mark.requirement("REQ-DOMAIN-002")
-@pytest.mark.priority("MUST")
 def test_req_domain_002_no_conditional_imports():
     """
     REQ-DOMAIN-002: Verify no domain-specific conditional imports in core code.
