@@ -622,6 +622,7 @@ class TestPerovskiteDBClient:
 
     def test_search_perovskites(self, tmp_path):
         """Test searching/filtering perovskite data"""
+        pytest.importorskip("openpyxl")  # pandas' Excel engine; not a declared dependency
         # Create test data
         xlsx_file = tmp_path / "perovskites.xlsx"
         test_data = pd.DataFrame({

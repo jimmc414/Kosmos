@@ -349,6 +349,9 @@ TEMPLATES = {
 @pytest.mark.parametrize("template, csv, x_col, y_col, test, expected", CONSISTENCY_CASES)
 def test_template_matches_analysis_fn(template, csv, x_col, y_col, test, expected):  # (f)
     path = DATA_DIR / csv
+    if not path.exists():
+        # perovskite_solar_cell_test.csv is not tracked (TEST#perovskite-csv-untracked)
+        pytest.skip(f"{csv} is not in this checkout")
     experiment_type = ExperimentType.COMPUTATIONAL if test is None else ExperimentType.DATA_ANALYSIS
     if isinstance(test, str):  # spearman: the enum has no member, the template reads the string
         protocol = _protocol(x_col, y_col, experiment_type, StatisticalTest.CORRELATION)

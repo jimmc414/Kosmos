@@ -237,7 +237,8 @@ class TestEndToEndPipeline:
 
         # Save finding - use async method with correct signature
         finding_dict = finding_with_provenance.to_dict()
-        asyncio.get_event_loop().run_until_complete(
+        # asyncio.run: get_event_loop() fails once an earlier test has closed the loop
+        asyncio.run(
             state_manager.save_finding_artifact(
                 cycle=1,
                 task_id=5,

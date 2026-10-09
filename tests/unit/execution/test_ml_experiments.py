@@ -227,9 +227,9 @@ class TestMLAnalyzer:
         X, y = make_classification(n_samples=100, n_features=5, random_state=42)
 
         model = LogisticRegression()
+        # l2 is LogisticRegression's default; scikit-learn 1.8 deprecates the 'penalty' parameter
         param_grid = {
             'C': [0.1, 1.0, 10.0],
-            'penalty': ['l2']
         }
 
         analyzer = MLAnalyzer(random_state=42)
@@ -248,7 +248,7 @@ class TestMLAnalyzer:
 
         # Check best params is one of the grid combinations
         assert result['best_params']['C'] in [0.1, 1.0, 10.0]
-        assert result['best_params']['penalty'] == 'l2'
+        assert set(result['best_params']) == {'C'}
 
         # Check tested 3 combinations
         assert result['n_combinations_tested'] == 3

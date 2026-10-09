@@ -286,6 +286,7 @@ class TestDataLoader:
 
     def test_load_excel(self):
         """Test Excel loading."""
+        pytest.importorskip("openpyxl")  # pandas' Excel engine; not a declared dependency
         # Create temporary Excel file
         df_original = pd.DataFrame({
             'x': [1, 2, 3],
