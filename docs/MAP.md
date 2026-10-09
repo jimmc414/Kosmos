@@ -54,7 +54,7 @@ input) · SNAPSHOT (true at a date; re-verify).
 | CLAUDE.md | CANON | the contract |
 | docs/process/INVENTORY_S0.md | SNAPSHOT 2026-10-04 | environment readings and the owner's Phase A rulings |
 | docs/DEEP_ONBOARD.md (untracked) | MIXED | grep Gotchas and the Change Impact Index for touched files; trust its evidence over its claims; the known-wrong items are listed in plan P3-5 |
-| README.md | STALE until P3-5 lands | never a build input; P3-5 rewrites it |
+| README.md | CANON since P3-5 (s7, 2026-10-09) | describes the director path and the measured state; edits keep it true |
 | docs/xray.md · docs/DEEP_ONBOARD_VALIDATION.md · evaluation/*_findings.md · evaluation/CRITICAL_EVALUATION_REPORT.md (untracked) | SNAPSHOT 2026-02 to 2026-10 | owner's reports; evidence only, never a build input, never staged |
 | archive/ · .claude/export/WARM_START.md · docs/planning, docs/phase-reports | STALE | history |
 | .claude/skills/next-plan-item/SKILL.md | STALE (superseded s0) | pointer only |

@@ -1,10 +1,13 @@
 # Kosmos
 
-An autonomous AI scientist for scientific discovery, implementing the architecture described in [Lu et al. (2024)](https://arxiv.org/abs/2511.02824).
+> **Not a reproduction.** This project follows the architecture described in the Kosmos paper
+> (Mitchener et al., Edison Scientific, November 2025). It has not reproduced the paper's results,
+> and none of the paper's claims below has been measured here.
+
+An autonomous AI scientist for scientific discovery, built on the architecture described in [Mitchener et al. (2025)](https://arxiv.org/abs/2511.02824).
 
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-blue.svg)](https://github.com/jimmc414/Kosmos)
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/jimmc414/Kosmos)
-[![Implementation](https://img.shields.io/badge/paper_gaps-17%2F17%20complete-green.svg)](archive/PAPER_IMPLEMENTATION_GAPS.md)
 
 ## What is Kosmos?
 
@@ -18,15 +21,30 @@ Kosmos is an open-source implementation of an autonomous AI scientist that can:
 
 The system runs autonomous research cycles, generating tasks, executing analyses, and synthesizing findings into validated discoveries.
 
+### What it does today
+
+`kosmos run` drives one research director per question. Each iteration generates hypotheses,
+binds their variables to the columns of your dataset (`--data-path`), and runs one statistical test
+per experiment in the Docker sandbox. Every result is then validated in three ways: the statistic
+is recomputed on the real file, a permutation null shuffles the dependent column, and ScholarEval
+scores it as an advisory signal. A finding counts as validated only when the recomputation matches
+and the null rejects. Each run reports the experiments attempted, succeeded and failed, the results
+from the real file versus synthetic data, and how many findings were validated or rejected. Each result row shows its test, statistic, p-value, n, data source and validation
+status. The run also reports untested hypotheses and the real token cost from the provider
+(`total_cost_usd`, cost per validated finding). Measured so far: the no-LLM bound template
+on the bundled climate CSV recovers the known truth (Pearson r 0.9317, p 5.8e-29, n 64) on every
+ladder run. A live end-to-end acceptance run with a real model is still pending, so
+model-driven discovery rates have not been measured.
+
 ## Quick Start
 
 ### Requirements
 
 - Python 3.11+
-- Anthropic API key or OpenAI API key
-- Docker (recommended for code execution)
+- An LLM provider: DeepSeek or another LiteLLM model, an Anthropic API key, a Claude Code login, or OpenAI
+- Docker, with the sandbox image built: `docker build -t kosmos-sandbox:latest docker/sandbox`
 
-Without Docker, code runs via `exec()` with static validation. See "Code Execution Security" below.
+Docker is required for sandboxed execution; `kosmos run` records a SandboxUnavailable failure when the daemon is unreachable.
 
 ### Installation
 
@@ -55,34 +73,38 @@ python scripts/check_env.py
 
 # Run unit tests (pytest.ini enables an 80% coverage gate; --no-cov skips it)
 python -m pytest tests/unit --no-cov -q
+
+# The full verification ladder: lint, unit + integration tests, alembic, and a no-LLM
+# template run through the Docker sandbox on the climate CSV (about 5-8 minutes)
+bash scripts/verify.sh
 ```
 
-### Run Research Workflow
+### Run Research
 
-```python
-import asyncio
-from kosmos.workflow.research_loop import ResearchWorkflow
-
-async def run():
-    workflow = ResearchWorkflow(
-        research_objective="Your research question here",
-        artifacts_dir="./artifacts"
-    )
-    result = await workflow.run(num_cycles=5, tasks_per_cycle=10)
-    report = await workflow.generate_report()
-    print(report)
-
-asyncio.run(run())
+```bash
+kosmos run "Does atmospheric CO2 concentration predict global temperature anomaly?" \
+  --domain climate_science \
+  --data-path evaluation/data/climate_co2_temperature_test.csv \
+  --seed 42 --max-iterations 3 --budget 1
 ```
+
+The general form is `kosmos run "<question>" --domain <d> --data-path <csv> --seed 42 --max-iterations 3 --budget 1`.
+`--data-path` points the experiments at your dataset (without it, results are labelled synthetic and are
+never counted as supported), `--seed` makes reruns reproducible, and `--budget` is a hard limit in USD.
 
 ### CLI Usage
 
 ```bash
-# Run research with default settings
-kosmos run "What metabolic pathways differ between cancer and normal cells?" --domain biology
+# Run research on your dataset, reproducibly
+kosmos run "What metabolic pathways differ between cancer and normal cells?" --domain biology \
+  --data-path data/expression.csv --seed 42
 
-# With budget limit
-kosmos run "How do perovskites optimize efficiency?" --domain materials --budget 50
+# With budget limit (USD)
+kosmos run "How do perovskites optimize efficiency?" --domain materials --data-path data/cells.csv --budget 5
+
+# Pick the provider and model for one run
+kosmos run "Your question" --data-path data.csv --provider deepseek
+kosmos run "Your question" --data-path data.csv --provider claude-code --model opus
 
 # Interactive mode (recommended for first time)
 kosmos run --interactive
@@ -107,19 +129,23 @@ kosmos doctor
 
 ### Core Capabilities
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Research Loop | Multi-cycle autonomous research with hypothesis generation | Complete |
-| Literature Search | ArXiv, PubMed, Semantic Scholar integration | Complete |
-| Code Execution | Docker-sandboxed Jupyter notebooks | Complete |
-| Knowledge Graph | Neo4j-based relationship storage (optional) | Complete |
-| Context Compression | Query-based hierarchical compression (20:1 ratio) | Complete |
-| Discovery Validation | 8-dimension ScholarEval quality framework | Complete |
-| Multi-Provider LLM | Anthropic, OpenAI, LiteLLM (100+ providers) | Complete |
-| Budget Enforcement | Cost tracking with configurable limits and enforcement | Complete |
-| Error Recovery | Exponential backoff with circuit breaker | Complete |
-| Debug Mode | 4-level verbosity with stage tracking | Complete |
-| Real-time Streaming | SSE/WebSocket events, CLI --stream flag | Complete |
+| Feature | Description |
+|---------|-------------|
+| Research Director | One orchestrator per question: hypotheses, experiment design, execution, analysis, refinement, convergence |
+| Data binding | Hypothesis variables bound to dataset columns; unbindable hypotheses are reported as untestable |
+| Code Execution | Generated Python run in the Docker sandbox, validated by CodeValidator before it runs |
+| Validation | Recomputation on the real data plus a permutation null; ScholarEval is advisory, never a gate |
+| Literature Search | ArXiv, PubMed, Semantic Scholar integration |
+| Knowledge Graph | Neo4j-based relationship storage (optional) |
+| Multi-Provider LLM | DeepSeek and other LiteLLM models, Anthropic, Claude Code login, OpenAI |
+| Budget Enforcement | Real provider cost tracked per call and per result; `--budget` halts the run |
+| Error Recovery | Exponential backoff with circuit breaker |
+| Debug Mode | 4-level verbosity with stage tracking (`--trace`) |
+| CLI streaming | `kosmos run --stream` shows progress in the terminal |
+
+Archived (not on the run path; kept under `archive/code/`): the library research loop
+(`kosmos/workflow`), plan creator/reviewer (`kosmos/orchestration`), context compression
+(`kosmos/compression`), and the SSE/WebSocket API.
 
 ### Code Execution Security
 
@@ -135,7 +161,7 @@ AI-generated code runs in isolated Docker containers:
 
 See: `kosmos/execution/sandbox.py`, `docker_manager.py`
 
-Without Docker, falls back to `CodeValidator` static analysis + `exec()`. Not recommended for untrusted inputs.
+Docker is required for sandboxed execution; `kosmos run` records a SandboxUnavailable failure when the daemon is unreachable.
 
 ### Agent Architecture
 
@@ -146,22 +172,6 @@ Without Docker, falls back to `CodeValidator` static analysis + `exec()`. Not re
 | Experiment Designer | Creates experimental protocols |
 | Data Analyst | Analyzes results and interprets findings |
 | Literature Analyzer | Searches and synthesizes papers |
-| Plan Creator/Reviewer | Strategic task generation with 70/30 exploration/exploitation |
-
-### How Context Compression Works
-
-The system processes literature in batches, not bulk:
-
-1. **Relevance Sorting**: Papers ranked by query relevance before processing
-2. **Batch Size**: Top 10 papers per batch
-3. **Statistics Extraction**: Regex-based extraction of p-values, sample sizes, effect sizes
-4. **Tiered Summarization**:
-   - Task: 42K lines code to 2-line summary + extracted stats
-   - Cycle: 10 task summaries to cycle overview
-   - Synthesis: 20 cycles to final narrative
-   - Detail: Full content lazy-loaded when needed
-
-Effective ratio: ~20:1. See `kosmos/compression/compressor.py`.
 
 ## Configuration
 
@@ -250,9 +260,10 @@ docker compose up -d postgres
 docker compose --profile dev down
 ```
 
-Service URLs when running via Docker:
-- Neo4j Browser: http://localhost:7474 (user: neo4j, password: kosmos-password)
-- PostgreSQL: localhost:5432 (user: kosmos, password: kosmos-dev-password)
+Service URLs when running via Docker (bound to 127.0.0.1; the passwords come from `.env`:
+`KOSMOS_PG_SUPER_PASSWORD`, `REDIS_PASSWORD`, `NEO4J_AUTH`, `KOSMOS_PGADMIN_PASSWORD`):
+- Neo4j Browser: http://localhost:7474
+- PostgreSQL: localhost:5432 (user: kosmos)
 - Redis: localhost:6379
 
 #### Semantic Scholar API
@@ -281,28 +292,27 @@ See [docs/DEBUG_MODE.md](docs/DEBUG_MODE.md) for comprehensive debug documentati
 
 ```
 kosmos/
-├── agents/           # Research agents (director, hypothesis, experiment, etc.)
-├── compression/      # Context compression (20:1 ratio)
-├── core/             # LLM providers, metrics, configuration
-│   └── providers/    # Anthropic, OpenAI, LiteLLM with async support
-├── execution/        # Docker-based sandboxed code execution
-├── knowledge/        # Neo4j knowledge graph (1,025 lines)
+├── agents/           # Research agents; research_director.py drives `kosmos run`
+├── cli/              # Typer CLI (run, doctor, info, config, cache, history, status, graph)
+├── core/             # LLM providers, metrics, convergence, workflow state machine
+│   └── providers/    # Anthropic, OpenAI, LiteLLM, Claude Code
+├── db/               # SQLAlchemy models and operations (results carry provenance and cost)
+├── execution/        # Code generation and Docker-sandboxed execution
+├── knowledge/        # Neo4j knowledge graph (optional)
 ├── literature/       # ArXiv, PubMed, Semantic Scholar clients
-├── orchestration/    # Plan creation/review, task delegation
-├── validation/       # ScholarEval 8-dimension quality framework
-├── workflow/         # Main research loop integration
+├── safety/           # CodeValidator, guardrails, emergency stop
+├── validation/       # Recomputation, permutation null, ScholarEval (advisory)
 └── world_model/      # State management, JSON artifacts
 ```
 
 ## Project Status
 
-### Implementation Completeness
+### Implementation Status
 
-| Category | Percentage | Description |
-|----------|------------|-------------|
-| Paper gaps | 100% | All 17 paper implementation gaps complete |
-| Ready for user testing | 95% | Core research loop, agents, LLM providers, validation |
-| Deferred | 5% | Phase 4 production mode (polyglot persistence) |
+The viability plan (`evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md`) is being worked on the
+`viability-fixes` branch: one real experiment per run on the owner's dataset, validated by
+recomputation and a permutation null, reported with real cost. The earlier "17/17 paper gaps
+complete" figure counted code that exists, not behavior that was measured.
 
 ### Fixed Issues (Recent)
 
@@ -323,9 +333,9 @@ kosmos/
 | [#65](https://github.com/jimmc414/Kosmos/issues/65) | Paper accuracy validation | ✅ Fixed |
 | [#72](https://github.com/jimmc414/Kosmos/issues/72) | Real-time streaming API | ✅ Fixed |
 
-### Implementation Complete
+### Paper gap tracking
 
-All 17 paper implementation gaps have been addressed. Full tracking: [PAPER_IMPLEMENTATION_GAPS.md](archive/PAPER_IMPLEMENTATION_GAPS.md)
+[archive/PAPER_IMPLEMENTATION_GAPS.md](archive/PAPER_IMPLEMENTATION_GAPS.md) was checked on the existence of code, not on measured behavior.
 
 ### Test Coverage
 
@@ -346,19 +356,19 @@ E2E tests skip based on environment:
 
 This project implements the architecture from the Kosmos paper but **has not yet reproduced** the paper's claimed results:
 
-| Paper Claim | Implementation Status |
-|-------------|----------------------|
-| 79.4% accuracy on scientific statements | Architecture implemented, not validated |
-| 7 validated discoveries | Not reproduced |
-| 1,500 papers per run | Architecture supports this |
-| 42,000 lines of code per run | Architecture supports this |
-| 200 agent rollouts | Configurable via `max_iterations` |
+| Paper Claim | Implementation Status | Measured |
+|-------------|----------------------|----------|
+| 79.4% accuracy on scientific statements | Architecture implemented, not validated | no |
+| 7 validated discoveries | Not reproduced | no |
+| 1,500 papers per run | Not exercised (literature search is per hypothesis) | no |
+| 42,000 lines of code per run | Not exercised (one bound test per experiment) | no |
+| 200 agent rollouts | Configurable via `max_iterations` | no |
 
 The system is suitable for experimentation and further development. Before production research use, validation studies should be conducted.
 
 ## Limitations
 
-1. **Docker recommended**: Without Docker, code execution falls back to direct `exec()` which is unsafe for untrusted code.
+1. **Docker required**: Docker is required for sandboxed execution; `kosmos run` records a SandboxUnavailable failure when the daemon is unreachable.
 
 2. **Neo4j optional**: Knowledge graph features require Neo4j. Set `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` to enable.
 
@@ -371,7 +381,8 @@ The system is suitable for experimentation and further development. Before produ
 ## Documentation
 
 ### Current Status
-- [archive/PAPER_IMPLEMENTATION_GAPS.md](archive/PAPER_IMPLEMENTATION_GAPS.md) - Paper implementation gaps (17/17 complete)
+- [archive/PAPER_IMPLEMENTATION_GAPS.md](archive/PAPER_IMPLEMENTATION_GAPS.md) - Paper implementation gaps (checked on code existence, not measured behavior)
+- [evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md](evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md) - What was measured and what changes make a run viable
 - [docs/DEBUG_MODE.md](docs/DEBUG_MODE.md) - Debug mode guide
 
 ### Archived Analysis
@@ -385,22 +396,22 @@ The system is suitable for experimentation and further development. Before produ
 
 ## Paper Gap Solutions
 
-The original paper omitted implementation details for 6 critical components. This repository provides those implementations:
+The original paper omitted implementation details for 6 critical components. This repository proposed implementations for them; none is measured against the paper:
 
-| Gap | Problem | Solution |
-|-----|---------|----------|
-| 0 | Context compression for 1,500 papers | Hierarchical 3-tier compression (20:1 ratio) |
-| 1 | State Manager schema unspecified | 4-layer hybrid architecture (JSON + Neo4j + Vector + Citations) |
-| 2 | Task generation algorithm unstated | Plan Creator + Plan Reviewer pattern |
-| 3 | Agent integration mechanism unclear | Skill loader with 116 domain-specific skills (see [#67](https://github.com/jimmc414/Kosmos/issues/67)) |
-| 4 | Execution environment not described | Docker sandbox with Python + R support (see [#69](https://github.com/jimmc414/Kosmos/issues/69)) |
-| 5 | Discovery validation criteria missing | ScholarEval 8-dimension quality framework |
+| Gap | Problem | Solution | Measured |
+|-----|---------|----------|----------|
+| 0 | Context compression for 1,500 papers | Hierarchical 3-tier compression (archived, not on the run path) | no |
+| 1 | State Manager schema unspecified | 4-layer hybrid architecture (JSON + Neo4j + Vector + Citations) | no |
+| 2 | Task generation algorithm unstated | Plan Creator + Plan Reviewer pattern (archived, not on the run path) | no |
+| 3 | Agent integration mechanism unclear | Skill loader for domain-specific skills (see [#67](https://github.com/jimmc414/Kosmos/issues/67)) | no |
+| 4 | Execution environment not described | Docker sandbox with Python + R support (see [#69](https://github.com/jimmc414/Kosmos/issues/69)) | no |
+| 5 | Discovery validation criteria missing | Recomputation + permutation null; ScholarEval advisory | no |
 
 For detailed analysis, see [archive/120525_implementation_gaps_v2.md](archive/120525_implementation_gaps_v2.md).
 
 ## Based On
 
-- **Paper**: [Kosmos: An AI Scientist for Autonomous Discovery](https://arxiv.org/abs/2511.02824) (Lu et al., 2024)
+- **Paper**: [Kosmos: An AI Scientist for Autonomous Discovery](https://arxiv.org/abs/2511.02824) (Mitchener et al., Edison Scientific, November 2025)
 - **K-Dense ecosystem**: Pattern repositories for AI agent systems
 - **kosmos-figures**: [Analysis patterns](https://github.com/EdisonScientific/kosmos-figures)
 

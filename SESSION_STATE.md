@@ -12,13 +12,13 @@
      their log rows at the top are the index). Anchor edits on the LINE-START
      header; this comment quotes the headers and a substring search lands here. -->
 
-## NEXT ACTION (rewritten s6, 2026-10-09)
-s7 = M7 VIAB#P3-5 README and DEEP_ONBOARD corrections (BUILD·high) under the owner's /goal loop
-(OWNER#goal-loop-rulings: F1/F2 waived; Lane-1 rows M7, M8, M9, M10 in order, any model). After M7
-the S2 exit gate (MAP §2: steps 18, 21, 19, 20, 22, 24 green; baseline retired; M5b landed; ladder
-green) is checked and, if met, the S2 stage-gate commit lands in that session.
+## NEXT ACTION (rewritten s7, 2026-10-09)
+s8 = M8 VIAB#C-1 Findings JSON and `kosmos report` (BUILD·high), the first S3 row, under the owner's
+/goal loop (OWNER#goal-loop-rulings). S2 is done (stage gate s7). Read HYG#retry-wrapper-reports-
+failure-as-success first: its escalate-by is M8 (the report shows Exec OK).
 
 ## Waiting-on-owner (same ids as BACKLOG §OWNER; the sweep keys on this section)
+- `SIGNAL#disk-c-low` — **NEW s7**: C: (/mnt/c) has 6.4 GB free against a 10 GB floor; Docker Desktop images and build cache live there (kosmos:test is 4.9 GB). The session cannot prune (Genesis rules). Free space, or allow removing kosmos:test or pruning the build cache outside the Genesis windows — escalate-by M10
 - `OWNER#rotate-semantic-scholar-key` — **NEW s6**: a failing default-value assertion printed the real SEMANTIC_SCHOLAR_API_KEY into the s6 session transcript (no file, no commit; vector closed by the hermetic suite). Rotate it or keep it — escalate-by any sitting
 - `OWNER#goal-loop-rulings` — **RULED 2026-10-09 (s6)**: the /goal text pre-answers F1/F2 (waived), LIVE-25 spend (authorized once, exactly step 25), the report signature (NOT pre-answered: stop and wait), and the merge to master (authorized once, by PR, merge commit) (backlog/OWNER-ruled.md)
 - `OWNER#compose-edit-permission` — **RULED 2026-10-09 (s5)**: the owner ran the M5b edit by hand and committed it (backlog/OWNER-ruled.md)
@@ -47,6 +47,16 @@ PARKED (never started under the hold): (none)
 - **Last documentation-checklist run:** s0 2026-10-04 (B7 freeze; token in docs/MAP_CHANGELOG.md and docs/PLAN.md §Commit trail)
 
 ## Recent sessions (newest first; each block opens with `<!-- session s<N> -->`)
+<!-- session s7 -->
+### s7 — 2026-10-09 ≈02:54 → 03:10 CDT (BUILD Opus high; /goal loop) — M7 VIAB#P3-5 README and DEEP_ONBOARD corrections, then the S2 stage gate
+- signals: signals: RED disk · 7 checks · tree 5M/36U
+- **Signal:** RED disk. /mnt/c had 6.4 GB free against the 10 GB floor (Docker Desktop images and cache on C:). Recorded as SIGNAL#disk-c-low (owner). Nothing was pruned (Genesis rules). The work continued because tests and the ladder write to /tmp.
+- **What landed:** commit `s7 — P3-5: …`. README.md: the Not-a-reproduction banner; the attribution (Mitchener et al., Edison Scientific, November 2025) at the top and in Based On; the paper_gaps badge removed; a What-it-does-today paragraph (built from the run's real metric keys, plus the measured gate-4 truth and "live acceptance pending"); requirements state that Docker is required (the SandboxUnavailable sentence, replacing both exec() fallback claims); the quick start is the plan's `kosmos run ... --data-path --seed 42 --max-iterations 3 --budget 1`; Verify runs check_env, unit tests and the ladder; the CLI examples use --data-path/--seed/--provider/--model. The features table is re-based on the director path, with the archived modules named; the compression section is removed; the architecture tree is current; the compose service passwords now come from .env; the status table is honest; Measured columns read "no" on both paper tables. archive/PAPER_IMPLEMENTATION_GAPS.md banner. MAP §3 README → CANON (changelog row). docs/DEEP_ONBOARD.md: the seven items fixed in place by one agent, 30 in-line edits with file:line evidence (host-exec fallback ×9, getattr in SAFE_BUILTINS ×3, 33 FSM edges ×3, oldest-written eviction ×1, cache directories ×7, the --stream display ×1, conftest/hermetic ×6). The file stays untracked and was not staged (the owner's file; backup in the s7 scratchpad).
+- **Deviations / interpretations:** (1) "Verify becomes the new smoke test (Section 6)": no smoke script exists (VIAB#smoke-test-real-data, parked), so Verify runs check_env.py and the ladder, as PLAN M7 says. (2) The What-it-does-today paragraph does not claim a "findings with a real test statistic" count: build_run_results has none, and each row carries its own statistic. (3) README claims that M4's archival made false (compression, plan creator/reviewer, research loop, SSE/WebSocket) were corrected too, because the README becomes CANON. (4) Stale DEEP_ONBOARD details outside the seven items (workflow.py line count, ProductionExecutor recommended at 1387/3400, research_loop as an event producer at 634) were left for the owner's document.
+- **Tests / verify:** step 22: grep for Lu et al/3704/research_loop prints nothing, Mitchener ×3, `kosmos run --help` lists --seed and --data-path. Step 21 re-run: ok / no files / 1945 collected, no errors. `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (252 s)` 02:57:00 → 03:01:12, judge 0 red / 0 baseline.
+- **Review:** SELF-REVIEW three lenses (spec fidelity against plan §5 P3-5 Required and PLAN M7; correctness of every README claim against code, e.g. metric keys in run_results.py and the run options in `--help`; doc-only, so no test lens). Found and fixed: the "findings with a real statistic" overclaim. Agent report read; its evidence spot-checked (33 transitions, SAFE_BUILTINS). Tally: 1 found, 1 fixed, 0 open.
+- **Wrap:** clean. S2 exit gate met (steps 18, 20, 24 at s6; 19 at s5; 21 and 22 at s7; baseline retired s6; M5b landed; ladder green), so this session made the S2 stage-gate commit.
+
 <!-- session s6 -->
 ### s6 — 2026-10-09 ≈00:49 → 03:00 CDT (BUILD Opus high; /goal loop, owner attended) — M6 VIAB#P3-3 Test suite green, baseline retired
 - signals: signals: 7 OK · tree 5M/36U
@@ -125,6 +135,7 @@ PARKED (never started under the hold): (none)
 ## Session log (append-only; NEWEST FIRST; insert directly below the separator)
 | Date | Did | Commits | Verify |
 |---|---|---|---|
+| 2026-10-09 s7 | **M7 VIAB#P3-5 done; S2 → done, S3 → active (BUILD Opus high, /goal).** README rewritten to the director path and the measured state, README CANON; gaps banner; DEEP_ONBOARD's seven items fixed in place (untracked). Step 22 green. SIGNAL#disk-c-low recorded. Review: 3 lenses, 1 overclaim fixed. | `s7 — P3-5:`, `s7 — S2-gate:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (252 s) 02:57:00 → 03:01:12` |
 | 2026-10-09 s6 | **M6 VIAB#P3-3 done; FACTORY#retire-test-baseline done; F1/F2 waived by the owner's /goal (BUILD Opus high).** Hermetic test suite after a .env key printed into the transcript (reported; OWNER#rotate-semantic-scholar-key). All 394 baseline ids green, baseline empty; about 12 source defects fixed; 4 parallel agents on disjoint files; steps 18/20/24 exit 0 bare. Review: 3 lenses + agents, 3 RED controls, 11 rows registered. | `s6 — P3-3:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (274 s) 02:47:54 → 02:52:28` |
 | 2026-10-08 s5 | **M5 VIAB#P3-2 done (M5b 2026-10-09, edited and committed by the owner); M5b was first blocked (BUILD Opus high, attended; NEXT ACTION F1 is JUDGMENT, so M5 per its own line).** .dockerignore keeps the volumes out; Dockerfile copies the data-files inputs, stage `production`, version health check; litellm core, server/postgres extras, ruff lint table; k8s → archive; scripts/check_env.py + 3 tests. Step 19 green (build, version, dry-run, no-fastapi import). The compose edit was refused by the permission classifier: OWNER#compose-edit-permission. Review: SELF-REVIEW 3 lenses, 4 mutants killed, 1 fixed, 2 rows registered. | 17946d4, `s5 — P3-2: … (M5b)` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (246 s) 21:55:15 → 21:59:23` (M5a tree; M5b changes only docker-compose.yml) |
 | 2026-10-08 s4 | **M4 VIAB#P3-4 done (BUILD Opus high, attended; NEXT ACTION F1 is JUDGMENT, so rule 2e).** Tier A (19 modules) and Tier B (workflow, orchestration, compression, three scripts) under archive/code with their tests (30 test files whole or split by an AST census); exports pruned; norecursedirs and the coverage omit; README with the importer history. Step 21 green after each commit. TEST#permutation-timing-flaky fixed forward (best of three). Review: SELF-REVIEW 3 lenses, 4 found and fixed. | 51ea888, `s4 — P3-4: … Tier B` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (479 s) 20:49:20 → 20:57:28` (Tier A); `… (246 s) 21:05:03 → 21:09:14` (Tier B) |

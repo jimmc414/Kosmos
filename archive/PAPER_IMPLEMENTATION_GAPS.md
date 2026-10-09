@@ -1,5 +1,7 @@
 # Paper Implementation Gaps
 
+> Checked on existence of code, not on measured behavior; see evaluation/VIABILITY_ASSESSMENT_AND_CHANGE_PLAN.md.
+
 **Document Purpose**: Track gaps between the original Kosmos paper claims and this implementation.
 **Paper Reference**: Mitchener et al., "Kosmos: An AI Scientist for Autonomous Discovery" (arXiv:2511.02824v2)
 **Last Updated**: 2025-12-08
