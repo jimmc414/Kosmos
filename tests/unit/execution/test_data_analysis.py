@@ -604,6 +604,8 @@ class TestDataLoaderParquet:
 
     def test_load_parquet_file_not_found(self):
         """Test parquet loading with non-existent file."""
+        # The loader checks pyarrow first; CI may resolve a pyarrow that needs NumPy 2
+        pytest.importorskip("pyarrow.parquet")
         with pytest.raises(FileNotFoundError):
             DataLoader.load_parquet('/nonexistent/file.parquet')
 
