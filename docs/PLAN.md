@@ -201,6 +201,12 @@ websocket.py are already gone after M4.
 → a version string; `pip install -e . --dry-run` → litellm resolved; `python -c "import kosmos.cli.main"`
 in an env without fastapi → exit 0 (plan §8 step 19; the no-fastapi check may use
 `python -c "import sys; sys.modules['fastapi']=None; import kosmos.cli.main"`); ladder green.
+*Ruled s3 (OWNER#compose-edit-approval):* M5 runs whole; M5b commits the owner's `${VAR:?}`
+hardening as-is together with the edit, staged by name. Genesis (SESSION_STATE §STANDING) binds
+every Docker step: the .dockerignore edit lands BEFORE the first `docker build .`; the compose
+file is checked only with `docker compose --profile prod config --quiet`, never `up`/`down`;
+`docker inspect kosmos-postgres -f '{{.Id}} {{.State.StartedAt}}'` is read before and after and
+must match; the build respects the Genesis no-go windows; scripts/init_db.sql never moves.
 *DoD:* M5a: as M1 but `VIAB#P3-2` stays `in-plan, blocked(OWNER#compose-edit-approval)` until
 M5b; M5b (XS, once ruled): the compose edit staged by name in its own commit, `VIAB#P3-2` →
 done, OWNER#compose-edit-approval → ruled in backlog/OWNER-ruled.md.
