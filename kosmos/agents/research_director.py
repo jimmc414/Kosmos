@@ -2111,6 +2111,62 @@ class ResearchDirectorAgent(BaseAgent):
             validated = validated and scholar.passes_threshold
         return ("validated" if validated else "rejected"), detail
 
+    async def _save_finding(
+        self, row, interpretation, protocol_name: str, hypothesis_id: Optional[str],
+        validation_status: str, validation_detail: Dict[str, Any],
+        hypothesis_supported: Optional[bool], confidence: float,
+    ) -> Optional[Path]:
+        """Write a validated or rejected result as a Finding to
+        <artifacts_dir>/<run_id>/findings/<result_id>.json, beside its saved code.
+
+        Returns the path written, or None; a failure only logs.
+        """
+        from kosmos.world_model.artifacts import ArtifactStateManager
+
+        try:
+            stats = dict(row.statistical_tests or {})
+            provenance = dict(getattr(row, "provenance", None) or {})
+            recomputed = validation_detail.get("recomputed") or {}
+            n = stats.get("n", recomputed.get("n"))
+            plan_results = list(getattr(self.research_plan, "results", None) or [])
+            finding = {
+                "finding_id": row.id,
+                "summary": interpretation.summary,
+                "statistics": stats,
+                "methods": f"{protocol_name}; {stats.get('test_type')} on {stats.get('columns')}; n={n}",
+                "interpretation": interpretation.significance_interpretation,
+                "hypothesis_id": hypothesis_id,
+                "refutes_hypothesis": hypothesis_supported is False,
+                "confidence": float(confidence),
+                "null_model_result": validation_detail.get("null_model"),
+                "scholar_eval": validation_detail.get("scholar_eval"),
+                "code_provenance": {"notebook_path": provenance.get("code_path"), "cell_index": 0},
+                "metadata": {
+                    "run_id": self.run_id,
+                    "result_id": row.id,
+                    "validation_status": validation_status,
+                    "recomputed": validation_detail.get("recomputed"),
+                    "recomputed_match": validation_detail.get("recomputed_match"),
+                    "supports_hypothesis": hypothesis_supported,
+                    "data_source": row.data_source,
+                    "provenance": {
+                        k: provenance.get(k) for k in ("git_sha", "data_sha256", "seed", "code_sha256")
+                    },
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            run_dir = self.artifacts_dir / self.run_id
+            manager = ArtifactStateManager(artifacts_dir=str(run_dir))
+            return await manager.save_finding_artifact(
+                cycle=getattr(self.research_plan, "iteration_count", 0) or 0,
+                task_id=plan_results.index(row.id) if row.id in plan_results else len(plan_results),
+                finding=finding,
+                path=run_dir / "findings" / f"{row.id}.json",
+            )
+        except Exception as e:
+            logger.warning(f"Could not write the finding artifact for result {row.id}: {e}")
+            return None
+
     async def _handle_analyze_result_action(self, result_id: str):
         """
         Handle ANALYZE_RESULT action by calling DataAnalystAgent directly.
@@ -2160,6 +2216,7 @@ class ResearchDirectorAgent(BaseAgent):
                     random_seed=db_result.random_seed,
                     validation_status=db_result.validation_status,
                     error_message=db_result.error_message,
+                    provenance=dict(db_result.provenance) if isinstance(db_result.provenance, dict) else {},
                 )
 
                 # Load hypothesis if available
@@ -2176,6 +2233,7 @@ class ResearchDirectorAgent(BaseAgent):
 
             # A failed execution has nothing to interpret; record it without an LLM call.
             # Code rejected as unsafe never ran and keeps its rejected_unsafe status.
+            interpretation = None
             if pydantic_result.status == ResultStatus.FAILED and row.validation_status == "rejected_unsafe":
                 supported, confidence = None, 0.0
                 summary = f"Code rejected as unsafe, not executed: {row.error_message}"
@@ -2210,6 +2268,13 @@ class ResearchDirectorAgent(BaseAgent):
                 hypothesis_supported = False
             else:
                 hypothesis_supported = None
+
+            # A checked statistic becomes a findings artifact; writing it never fails the analysis
+            if validation_status in ("validated", "rejected") and interpretation is not None:
+                await self._save_finding(
+                    row, interpretation, protocol_name, hypothesis_id,
+                    validation_status, validation_detail, hypothesis_supported, confidence,
+                )
 
             # Track rollout (Issue #58)
             self.rollout_tracker.increment("data_analysis")

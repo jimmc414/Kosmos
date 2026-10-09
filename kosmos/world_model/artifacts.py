@@ -200,7 +200,8 @@ class ArtifactStateManager:
         self,
         cycle: int,
         task_id: int,
-        finding: Dict
+        finding: Dict,
+        path: Optional[Path] = None,
     ) -> Path:
         """
         Save finding as JSON artifact.
@@ -209,13 +210,18 @@ class ArtifactStateManager:
             cycle: Research cycle number
             task_id: Task identifier within cycle
             finding: Finding dictionary with summary, statistics, etc.
+            path: Where to write the JSON; defaults to
+                <artifacts_dir>/cycle_<cycle>/task_<task_id>_finding.json
 
         Returns:
             Path to saved artifact file
         """
-        # Create cycle directory
-        cycle_dir = self.artifacts_dir / f"cycle_{cycle}"
-        cycle_dir.mkdir(parents=True, exist_ok=True)
+        if path is None:
+            cycle_dir = self.artifacts_dir / f"cycle_{cycle}"
+            artifact_path = cycle_dir / f"task_{task_id}_finding.json"
+        else:
+            artifact_path = Path(path)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Generate finding ID if not present
         if 'finding_id' not in finding:
@@ -229,7 +235,6 @@ class ArtifactStateManager:
         finding_obj = Finding.from_dict(finding) if isinstance(finding, dict) else finding
 
         # Save as JSON
-        artifact_path = cycle_dir / f"task_{task_id}_finding.json"
         with open(artifact_path, 'w') as f:
             json.dump(finding_obj.to_dict(), f, indent=2)
 

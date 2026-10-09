@@ -88,6 +88,25 @@ def _usage(llm_client) -> Dict[str, Any]:
     return usage if isinstance(usage, dict) else {}
 
 
+def result_metrics(results: List[Dict[str, Any]], total_cost: Optional[float]) -> Dict[str, Any]:
+    """The plan section 7 counts over _result_row dicts, and the cost per validated finding."""
+    validated = sum(1 for r in results if r["validation_status"] == "validated")
+    return {
+        "experiments_attempted": len(results),
+        "experiments_succeeded": sum(1 for r in results if r["execution_success"] is True),
+        "experiments_failed": sum(1 for r in results if r["execution_success"] is not True),
+        "results_from_file": sum(1 for r in results if r["data_source"] == "file"),
+        "results_synthetic": sum(1 for r in results if r["data_source"] == "synthetic"),
+        "findings_validated": validated,
+        "findings_rejected": sum(
+            1 for r in results if r["validation_status"] in ("rejected", "rejected_unsafe")
+        ),
+        "cost_per_validated_finding": (
+            total_cost / validated if validated and total_cost is not None else None
+        ),
+    }
+
+
 def build_run_results(director, question: str, max_iterations: int) -> Dict[str, Any]:
     """Assemble the end-of-run report of a `kosmos run`.
 
@@ -137,7 +156,6 @@ def build_run_results(director, question: str, max_iterations: int) -> Dict[str,
     if total_cost is None:
         total_cost = _number(getattr(getattr(director, "llm_client", None), "total_cost_usd", None))
 
-    validated = sum(1 for r in results if r["validation_status"] == "validated")
     untestable = getattr(plan, "untestable_hypotheses", []) if plan else []
 
     metrics = {
@@ -145,18 +163,7 @@ def build_run_results(director, question: str, max_iterations: int) -> Dict[str,
         "total_cost_usd": total_cost,
         "input_tokens": usage.get("total_input_tokens", 0),
         "output_tokens": usage.get("total_output_tokens", 0),
-        "experiments_attempted": len(results),
-        "experiments_succeeded": sum(1 for r in results if r["execution_success"] is True),
-        "experiments_failed": sum(1 for r in results if r["execution_success"] is not True),
-        "results_from_file": sum(1 for r in results if r["data_source"] == "file"),
-        "results_synthetic": sum(1 for r in results if r["data_source"] == "synthetic"),
-        "findings_validated": validated,
-        "findings_rejected": sum(
-            1 for r in results if r["validation_status"] in ("rejected", "rejected_unsafe")
-        ),
-        "cost_per_validated_finding": (
-            total_cost / validated if validated and total_cost is not None else None
-        ),
+        **result_metrics(results, total_cost),
         "hypotheses_untestable": len(untestable),
         "hypotheses_generated": final_status.get("hypothesis_pool_size", 0),
         "hypotheses_tested": final_status.get("hypotheses_tested", 0),

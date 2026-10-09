@@ -12,10 +12,11 @@
      their log rows at the top are the index). Anchor edits on the LINE-START
      header; this comment quotes the headers and a substring search lands here. -->
 
-## NEXT ACTION (rewritten s7, 2026-10-09)
-s8 = M8 VIAB#C-1 Findings JSON and `kosmos report` (BUILD·high), the first S3 row, under the owner's
-/goal loop (OWNER#goal-loop-rulings). S2 is done (stage gate s7). Read HYG#retry-wrapper-reports-
-failure-as-success first: its escalate-by is M8 (the report shows Exec OK).
+## NEXT ACTION (rewritten s8, 2026-10-09)
+s9 = M9 VIAB#M-1 `kosmos validate-null` and `kosmos rerun` (BUILD·high), the last S3 row, under the
+owner's /goal loop. After M9: plan §8 step 23 whole (test_report.py + test_metric_commands.py) and the
+S3 stage gate. Then M10 (LIVE-25, spend authorized once by OWNER#goal-loop-rulings ruling 2; the
+signature is a STOP).
 
 ## Waiting-on-owner (same ids as BACKLOG §OWNER; the sweep keys on this section)
 - `SIGNAL#disk-c-low` — **NEW s7**: C: (/mnt/c) has 6.4 GB free against a 10 GB floor; Docker Desktop images and build cache live there (kosmos:test is 4.9 GB). The session cannot prune (Genesis rules). Free space, or allow removing kosmos:test or pruning the build cache outside the Genesis windows — escalate-by M10
@@ -47,6 +48,16 @@ PARKED (never started under the hold): (none)
 - **Last documentation-checklist run:** s0 2026-10-04 (B7 freeze; token in docs/MAP_CHANGELOG.md and docs/PLAN.md §Commit trail)
 
 ## Recent sessions (newest first; each block opens with `<!-- session s<N> -->`)
+<!-- session s8 -->
+### s8 — 2026-10-09 ≈03:09 → 03:35 CDT (BUILD Opus high; /goal loop) — CI fix-forward, then M8 VIAB#C-1 Findings JSON and `kosmos report`
+- signals: signals: RED disk · 7 checks · tree 5M/36U (SIGNAL#disk-c-low, owner)
+- **CI:** GitHub run 37903111695, after the claude-code extra, got past collection with 5 failures, all environment differences: 2 tests need openpyxl (not declared; they now importorskip it); test_grid_search used `penalty`, which scikit-learn 1.8 deprecates (warnings are errors; CI resolved 1.9.1, local 1.7.2), so the grid uses C only; 2 gate-consistency cases read the untracked perovskite CSV (they skip when it is absent; TEST#perovskite-csv-untracked, owner). Plus an order dependency the M8 agent found: test_finding_save_and_load_with_provenance used asyncio.get_event_loop() and failed after the CLI tests; it now uses asyncio.run. Commit 378415a `s8 — P3-3: …`.
+- **What landed (M8):** commit `s8 — C-1: …`, built by one agent and reviewed by the session. ResearchDirectorAgent._save_finding is awaited in _handle_analyze_result_action after the verdict, for 'validated' and 'rejected' only. It writes a Finding (summary, statistics, methods, interpretation, hypothesis_id, refutes_hypothesis, null_model_result, scholar_eval, code_provenance {notebook_path: provenance code_path, cell_index 0}, metadata with recomputation and provenance subset) to <artifacts_dir>/<run_id>/findings/<result_id>.json. ArtifactStateManager.save_finding_artifact takes an optional `path` (the default layout is unchanged). Any write error only logs. kosmos/cli/commands/report.py: `kosmos report --run-id <id> [--output]` (registered like the other commands) renders a header (question from ResearchSession), the metrics table (result_metrics, factored out of build_run_results, same keys), validated, rejected and unvalidated results with provenance, and failed experiments with error messages. The default path is <artifacts_dir>/<run_id>/report.md; an unknown run exits 1.
+- **Deviations:** (1) save_finding_artifact gained `path` (it could only write cycle_<c>/task_<t>_finding.json). (2) The finding is written after the verdict rule, so it records supports/refutes. (3) The command is registered through register_commands' spec list, not @app.command. (4) The report's cost is the sum of per-result cost_usd ("LLM cost attributed to results"), which understates a run's total: hypothesis generation is not attributed to results and the CLI has no provider client. M10 quotes `kosmos run`'s own total_cost_usd. (5) HYG#retry-wrapper-reports-failure-as-success re-dated to M10 (reasons in the row).
+- **Tests / verify:** plan §8 step 23 (C-1 half) bare: test_report.py 8 passed, kosmos.db md5 2758f443 before and after, no artifacts/runs created in the repo. `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (224 s)` 03:24:08 → 03:27:52, judge 0 red / 0 baseline (one ladder for both commits; the CI commit touches tests only).
+- **Review:** SELF-REVIEW three lenses on the agent's diff (director, artifacts, CLI): the finding write is guarded, placed after the verdict, skipped for unvalidated/rejected_unsafe, and writes JSON only (no world_model or vector store passed); the tests cover written, rejected, unvalidated, write-failure and unknown-run. Tally: 1 order dependency fixed (test), 0 open.
+- **Wrap:** clean. S3 exit gate not met (M9 open).
+
 <!-- session s7 -->
 ### s7 — 2026-10-09 ≈02:54 → 03:10 CDT (BUILD Opus high; /goal loop) — M7 VIAB#P3-5 README and DEEP_ONBOARD corrections, then the S2 stage gate
 - signals: signals: RED disk · 7 checks · tree 5M/36U
@@ -136,6 +147,7 @@ PARKED (never started under the hold): (none)
 ## Session log (append-only; NEWEST FIRST; insert directly below the separator)
 | Date | Did | Commits | Verify |
 |---|---|---|---|
+| 2026-10-09 s8 | **CI fix-forward + M8 VIAB#C-1 done (BUILD Opus high, /goal).** 5 CI-only failures fixed (openpyxl, scikit-learn 1.8 penalty, untracked CSV → skip + owner row, event-loop order); findings JSON per validated/rejected result and `kosmos report`. Step 23 C-1 half green. Review: 3 lenses on the agent's diff. | 378415a, `s8 — C-1:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (224 s) 03:24:08 → 03:27:52` |
 | 2026-10-09 s7 | **M7 VIAB#P3-5 done; S2 → done, S3 → active (BUILD Opus high, /goal).** README rewritten to the director path and the measured state, README CANON; gaps banner; DEEP_ONBOARD's seven items fixed in place (untracked). Step 22 green. SIGNAL#disk-c-low recorded. Review: 3 lenses, 1 overclaim fixed. | `s7 — P3-5:`, `s7 — S2-gate:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (252 s) 02:57:00 → 03:01:12` |
 | 2026-10-09 s6 | **M6 VIAB#P3-3 done; FACTORY#retire-test-baseline done; F1/F2 waived by the owner's /goal (BUILD Opus high).** Hermetic test suite after a .env key printed into the transcript (reported; OWNER#rotate-semantic-scholar-key). All 394 baseline ids green, baseline empty; about 12 source defects fixed; 4 parallel agents on disjoint files; steps 18/20/24 exit 0 bare. Review: 3 lenses + agents, 3 RED controls, 11 rows registered. | `s6 — P3-3:` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (274 s) 02:47:54 → 02:52:28` |
 | 2026-10-08 s5 | **M5 VIAB#P3-2 done (M5b 2026-10-09, edited and committed by the owner); M5b was first blocked (BUILD Opus high, attended; NEXT ACTION F1 is JUDGMENT, so M5 per its own line).** .dockerignore keeps the volumes out; Dockerfile copies the data-files inputs, stage `production`, version health check; litellm core, server/postgres extras, ruff lint table; k8s → archive; scripts/check_env.py + 3 tests. Step 19 green (build, version, dry-run, no-fastapi import). The compose edit was refused by the permission classifier: OWNER#compose-edit-permission. Review: SELF-REVIEW 3 lenses, 4 mutants killed, 1 fixed, 2 rows registered. | 17946d4, `s5 — P3-2: … (M5b)` | `VERIFY PASS (4 gates): compile-lint tests alembic template-run  (246 s) 21:55:15 → 21:59:23` (M5a tree; M5b changes only docker-compose.yml) |
