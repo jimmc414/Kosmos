@@ -45,3 +45,27 @@ execute_code_safely), kosmos/validation/__init__.py (failure detector, accuracy 
 names), kosmos/safety/__init__.py (ResultVerifier, VerificationReport, VerificationIssue),
 kosmos/knowledge/__init__.py (graph builder and visualizer names), kosmos/workflow/__init__.py
 (ensemble names).
+
+## Tier B — the library research loop (second P3-4 commit)
+
+Plan §6 "Orchestrator consolidation": keep the director and archive the library loop. It never
+executes code. DelegationManager sends the task text to the data analyst and returns the LLM's
+words as statistics, and it takes no data path. `kosmos run` drives ResearchDirectorAgent, and
+nothing in the CLI reaches this loop. What the director needed from it was ported by P2-2 (null
+model), P2-3 (seed) and C-1 (generate_report; port source
+`archive/code/kosmos/workflow/research_loop.py`).
+
+| Module | Last importer removed by | Reason |
+|---|---|---|
+| kosmos/workflow/ (`__init__.py`, research_loop.py) | its importers moved with it (scripts/smoke_test.py and scripts/verify_e2e.py in this commit; kosmos/workflow/ensemble.py in Tier A) | The library loop (ResearchWorkflow); the README quickstart was its only entry point (fixed by VIAB#P3-5) |
+| kosmos/orchestration/ (plan_creator, plan_reviewer, delegation, novelty_detector) | moved with research_loop.py and scripts/smoke_test.py (this commit) | Plan, review and delegation for the library loop; the director uses kosmos/hypothesis/novelty_checker.py (P2-5) |
+| kosmos/compression/ (compressor) | moved with research_loop.py and scripts/smoke_test.py (this commit) | Context compression for the library loop |
+| scripts/smoke_test.py | — | Imports the library loop and compression throughout (docs/PLAN.md M4 pre-decision); plan §6's real-data rewrite is VIAB#smoke-test-real-data |
+| scripts/verify_e2e.py | — | Drives ResearchWorkflow end to end (plan §5 P3-4, owner decision 2026-10-02) |
+| scripts/verify_production.sh | — | Runs smoke_test.py, verify_e2e.py, the Tier B unit tests and the ProductionExecutor tests, and checks the archived imports; also runs a bare pytest that loads .env |
+
+Tests moved whole: tests/unit/workflow/, tests/unit/orchestration/, tests/unit/compression/,
+tests/integration/test_compression_pipeline.py, test_orchestration_flow.py,
+test_research_workflow.py, tests/e2e/test_autonomous_research.py. The mock fixtures
+mock_plan_creator, mock_plan_reviewer, mock_delegation_manager and mock_novelty_detector stay in
+tests/conftest.py: they import nothing, and the archived tests used them.
