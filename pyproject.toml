@@ -27,6 +27,7 @@ dependencies = [
     # LLM Providers
     "anthropic>=0.40.0",  # Claude/Anthropic provider
     "openai>=1.0.0",      # OpenAI provider and OpenAI-compatible APIs
+    "llm-prices>=1.2.0",  # Dated per-token model prices for cost tracking
 
     # Configuration and validation
     "pydantic>=2.0.0",
